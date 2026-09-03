@@ -2,7 +2,7 @@
 id: "20260903-mirror-workspace-rows-show-the-remote-git-branch-kj04"
 schema: task
 title: "mirror workspace rows show the remote git branch via a local shadow repo, plus forwarded rbranch, rahead and rbehind tokens; PR to upstream"
-status: open
+status: done
 section: herdr-mirror
 tier: medium
 blocked_by: []
@@ -17,3 +17,4 @@ HANDOVER 2026-09-03 10:01 from symphony-concertmaster to herdr-mirror-concertmas
 ## History
 
 - 2026-09-03 body corrected — handover to the section concertmaster
+- 2026-09-03T08:02:13.919Z landed task/20260903-mirror-workspace-rows-show-the-remote-git-branch-kj04 on main as 08545cd6c9c44a3ea1b2f6c27ce4744701b22398
