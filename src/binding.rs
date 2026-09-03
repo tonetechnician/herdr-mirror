@@ -92,20 +92,46 @@ fn write_config(path: &PathBuf, content: &str) -> Result<()> {
 
 fn sidebar_git_block() -> String {
     format!(
-        "\n{SIDEBAR_GIT_MARKER}\n[ui.sidebar.spaces]\nrows = [[\"state_icon\", \"workspace\"], [\"$rgit\"]]\n"
+        "\n{SIDEBAR_GIT_MARKER}\n[ui.sidebar.spaces]\nrows = [[\"state_icon\", \"workspace\"], [\"branch\", \"git_status\", \"$rgit\"]]\n"
     )
 }
 
 fn append_sidebar_git(content: &str) -> Result<String> {
-    if content.contains(SIDEBAR_GIT_MARKER) {
-        return Ok(content.to_string());
+    let mut document = content.parse::<toml_edit::DocumentMut>().map_err(|e| {
+        err(format!("cannot merge sidebar Git rows into invalid TOML: {e}"))
+    })?;
+    let spaces = document
+        .get_mut("ui")
+        .and_then(toml_edit::Item::as_table_mut)
+        .and_then(|ui| ui.get_mut("sidebar"))
+        .and_then(toml_edit::Item::as_table_mut)
+        .and_then(|sidebar| sidebar.get_mut("spaces"));
+    let Some(spaces) = spaces else {
+        return Ok(format!("{content}{}", sidebar_git_block()));
+    };
+    let spaces = spaces
+        .as_table_mut()
+        .ok_or_else(|| err("[ui.sidebar.spaces] is not a table"))?;
+    let rows = spaces
+        .get_mut("rows")
+        .and_then(toml_edit::Item::as_array_mut)
+        .ok_or_else(|| err("[ui.sidebar.spaces] has no rows array"))?;
+    let last = rows
+        .get_mut(rows.len().checked_sub(1).ok_or_else(|| err("[ui.sidebar.spaces].rows has no final row"))?)
+        .and_then(toml_edit::Value::as_array_mut)
+        .ok_or_else(|| err("[ui.sidebar.spaces].rows has no final row array"))?;
+    let has_rgit = last.iter().any(|token| token.as_str() == Some("$rgit"));
+    if !has_rgit {
+        last.push("$rgit");
     }
-    let parsed: toml::Value = toml::from_str(content)
-        .map_err(|e| err(format!("cannot merge sidebar Git rows into invalid TOML: {e}")))?;
-    if parsed.get("ui").and_then(|ui| ui.get("sidebar")).and_then(|sidebar| sidebar.get("spaces")).is_some() {
-        return Err(err("[ui.sidebar.spaces] already exists; add $rgit to its rows manually"));
+    let mut merged = document.to_string();
+    if !content.contains(SIDEBAR_GIT_MARKER) {
+        let section = merged
+            .find("[ui.sidebar.spaces]")
+            .ok_or_else(|| err("[ui.sidebar.spaces] has no table"))?;
+        merged.insert_str(section, &format!("{SIDEBAR_GIT_MARKER}\n"));
     }
-    Ok(format!("{content}{}", sidebar_git_block()))
+    Ok(merged)
 }
 
 fn binding_block(spec: &str, key: &str) -> String {
@@ -309,20 +335,46 @@ pub async fn sidebar_git(env: Env, write: bool) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::append_sidebar_git;
+    use super::{append_sidebar_git, sidebar_git_block, SIDEBAR_GIT_MARKER};
+
+    fn sidebar_rows(config: &str) -> Vec<Vec<String>> {
+        toml::from_str::<toml::Value>(config)
+            .unwrap()["ui"]["sidebar"]["spaces"]["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| {
+                row.as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|token| token.as_str().unwrap().to_string())
+                    .collect()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn writes_native_git_tokens_before_remote_git_token() {
+        let rows = sidebar_rows(&sidebar_git_block());
+        assert!(rows[1].iter().any(|token| token == "branch"));
+        assert!(rows[1].iter().any(|token| token == "git_status"));
+        assert_eq!(rows[1].last().unwrap(), "$rgit");
+    }
 
     #[test]
     fn adds_the_workspace_git_row_once() {
         let merged = append_sidebar_git("[ui.sidebar.agents]\nrows = [[\"agent\"]]\n").unwrap();
         assert!(merged.contains("[ui.sidebar.spaces]"));
-        assert!(merged.contains("\"$rgit\""));
+        assert_eq!(sidebar_rows(&merged)[1], vec!["branch", "git_status", "$rgit"]);
         assert_eq!(append_sidebar_git(&merged).unwrap(), merged);
     }
 
     #[test]
-    fn preserves_an_existing_workspace_sidebar() {
-        let err = append_sidebar_git("[ui.sidebar.spaces]\nrows = [[\"workspace\"]]\n").unwrap_err();
-        assert_eq!(err.to_string(), "[ui.sidebar.spaces] already exists; add $rgit to its rows manually");
+    fn appends_remote_git_token_to_existing_last_row() {
+        let config = "[ui.sidebar.spaces]\nrows = [[\"state_icon\", \"workspace\"], [\"branch\", \"git_status\"]]\n";
+        let merged = append_sidebar_git(config).unwrap();
+        assert!(merged.contains(SIDEBAR_GIT_MARKER));
+        assert_eq!(sidebar_rows(&merged)[1], vec!["branch", "git_status", "$rgit"]);
     }
 }
 

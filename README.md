@@ -405,12 +405,12 @@ Locally, name it in a sidebar row (`~/.config/herdr/config.toml`):
 rows = [["state_icon", "workspace"], ["state_text", "agent"], ["$rcwd"], ["$rgit"]]
 
 [ui.sidebar.spaces]
-rows = [["state_icon", "workspace"], ["$rgit"]]
+rows = [["state_icon", "workspace"], ["branch", "git_status", "$rgit"]]
 ```
 
 `herdr-mirror sidebar-git` prints that workspace snippet. Opt in to an atomic,
-marked write and config reload with `herdr-mirror sidebar-git --write`; it reads
-the marker back and refuses to overwrite an existing `[ui.sidebar.spaces]`.
+marked write and config reload with `herdr-mirror sidebar-git --write`; when
+`[ui.sidebar.spaces]` already exists, it appends `$rgit` to its last row.
 
 When `worktree_metadata` is enabled (the default), worktree-backed mirrors
 label themselves `<host>: <repo>/<worktree>` and forward `$rrepo`,
