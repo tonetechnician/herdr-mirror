@@ -614,6 +614,7 @@ mod tests {
             max_rows: None,
             api_transport: ApiTransport::Auto,
             git_branch: true,
+            worktree_metadata: true,
             always_control: true,
         }
     }

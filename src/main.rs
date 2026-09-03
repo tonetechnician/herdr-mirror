@@ -7,6 +7,7 @@
 //   herdr-mirror hide|show [host]       # toggle a connection's mirrors out of view
 //   herdr-mirror pick-workspace [--menu]            # popup host picker
 //   herdr-mirror remote-workspace|remote-tab|remote-split <right|down>
+//   herdr-mirror remote-worktree-open|remote-worktree-create|remote-worktree-remove
 //   herdr-mirror remote-invoke <plugin>.<action>
 //   herdr-mirror remote-actions [host]              # discovery
 //   herdr-mirror bind|unbind ...                    # keybinding setup
@@ -109,6 +110,9 @@ fn run_on(rt: &tokio::runtime::Runtime, cmd: &str, rest: &[String]) -> Result<()
             rt.block_on(pick::intercept(Env::resolve()?, what))
         }
         "remote-workspace" => rt.block_on(remote_action::run_cmd(Env::resolve()?, "workspace", None)),
+        "remote-worktree-open" => rt.block_on(remote_action::worktree_cmd(Env::resolve()?, "open")),
+        "remote-worktree-create" => rt.block_on(remote_action::worktree_cmd(Env::resolve()?, "create")),
+        "remote-worktree-remove" => rt.block_on(remote_action::worktree_cmd(Env::resolve()?, "remove")),
         "remote-tab" => rt.block_on(remote_action::run_cmd(Env::resolve()?, "tab", None)),
         "remote-split" => rt.block_on(remote_action::run_cmd(
             Env::resolve()?,
@@ -141,7 +145,7 @@ fn run_on(rt: &tokio::runtime::Runtime, cmd: &str, rest: &[String]) -> Result<()
             rt.block_on(binding::unbind(Env::resolve()?, what))
         }
         other => Err(util::err(format!(
-            "unknown command: {other} (daemon|pane|start|pause|ensure|status|once|restore|teardown|hide|show|pick-workspace|remote-workspace|remote-tab|remote-split|remote-invoke|remote-actions|bind|sidebar-git|unbind)"
+            "unknown command: {other} (daemon|pane|start|pause|ensure|status|once|restore|teardown|hide|show|pick-workspace|remote-workspace|remote-worktree-open|remote-worktree-create|remote-worktree-remove|remote-tab|remote-split|remote-invoke|remote-actions|bind|sidebar-git|unbind)"
         ))),
     }
 }

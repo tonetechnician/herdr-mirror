@@ -38,6 +38,9 @@ pub struct WsInfo {
 #[derive(Debug, Clone, Deserialize)]
 pub struct WorktreeInfo {
     pub checkout_path: String,
+    pub repo_root: String,
+    pub repo_name: String,
+    pub is_linked_worktree: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -821,6 +824,35 @@ fn add_git_tokens(tokens: &mut HashMap<String, String>, git: &GitStatus) {
     tokens.insert("rgit".into(), formatted_git_status(git));
 }
 
+fn add_worktree_tokens(tokens: &mut HashMap<String, String>, worktree: &WorktreeInfo) {
+    tokens.insert("rrepo".into(), worktree.repo_name.clone());
+    tokens.insert("rworktree".into(), worktree.repo_root.clone());
+    tokens.insert("rcwd".into(), worktree.checkout_path.clone());
+    tokens.insert("rlinked".into(), worktree.is_linked_worktree.to_string());
+}
+
+fn worktree_name(worktree: &WorktreeInfo) -> String {
+    if !worktree.is_linked_worktree {
+        return "main".into();
+    }
+    std::path::Path::new(&worktree.checkout_path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .unwrap_or("worktree")
+        .into()
+}
+
+fn workspace_label(host_prefix: &str, workspace: &WsInfo, include_worktree: bool) -> String {
+    let name = if include_worktree {
+        workspace.worktree.as_ref().map(|worktree| format!("{}/{}", worktree.repo_name, worktree_name(worktree)))
+    } else {
+        None
+    }
+    .unwrap_or_else(|| workspace.label.clone());
+    format!("{host_prefix}: {name}")
+}
+
 /// Is this remote pane another herdr-mirror's streamer pane? Read from the
 /// snapshot cwd marker — free, and race-free.
 fn pane_is_mirror(p: &PaneInfo) -> bool {
@@ -913,6 +945,15 @@ async fn converge_inner(deps: &ConvergeDeps<'_>, state: &mut HostState) -> Resul
                 }
                 None => log.log(&format!("[{}] no git branch for remote workspace {}", host.name, workspace.workspace_id)),
             }
+        }
+    }
+    let mut worktree_tokens: HashMap<String, HashMap<String, String>> = HashMap::new();
+    if host.worktree_metadata {
+        for workspace in &remote_snap.workspaces {
+            let Some(worktree) = &workspace.worktree else { continue };
+            let mut tokens = HashMap::new();
+            add_worktree_tokens(&mut tokens, worktree);
+            worktree_tokens.insert(workspace.workspace_id.clone(), tokens);
         }
     }
 
@@ -1063,7 +1104,7 @@ async fn converge_inner(deps: &ConvergeDeps<'_>, state: &mut HostState) -> Resul
         if mirror_ws_ids.contains(&rws.workspace_id) {
             continue;
         }
-        let label = format!("{}: {}", host.prefix, rws.label);
+        let label = workspace_label(&host.prefix, rws, host.worktree_metadata);
         if state.workspaces.get(&rws.workspace_id).is_some_and(|e| e.is_tombstoned()) {
             continue;
         }
@@ -1180,6 +1221,9 @@ async fn converge_inner(deps: &ConvergeDeps<'_>, state: &mut HostState) -> Resul
     let source = mirror_source(&host.name);
     for rws in &remote_snap.workspaces {
         let mut tokens = rws.tokens.clone();
+        if let Some(worktree) = worktree_tokens.get(&rws.workspace_id) {
+            tokens.extend(worktree.clone());
+        }
         if let Some(git) = git_statuses.get(&rws.workspace_id) {
             add_git_tokens(&mut tokens, git);
         }
@@ -1482,7 +1526,7 @@ async fn converge_inner(deps: &ConvergeDeps<'_>, state: &mut HostState) -> Resul
     state.ratios.retain(|k, _| k.split('|').next().is_some_and(|t| live_tabs.contains(t)));
 
     // 5. push authoritative agent status onto mirror panes
-    push_statuses(deps, &remote_snap, state, &git_statuses).await;
+    push_statuses(deps, &remote_snap, state, &git_statuses, &worktree_tokens).await;
     Ok(())
 }
 
@@ -1496,6 +1540,7 @@ pub async fn push_pane_status(
     entry: &mut PaneEntry,
     agent: Option<&AgentInfo>,
     git: Option<&GitStatus>,
+    worktree: Option<&HashMap<String, String>>,
     log: &Logger,
 ) {
     if entry.is_tombstoned() {
@@ -1538,6 +1583,9 @@ pub async fn push_pane_status(
             // same values a native one does, under whatever layout is configured
             // locally. Ignored by a pre-0.7.4 local server (no deny_unknown_fields).
             let mut tokens = agent.tokens.clone();
+            if let Some(worktree) = worktree {
+                tokens.extend(worktree.clone());
+            }
             if let Some(git) = git {
                 add_git_tokens(&mut tokens, git);
             }
@@ -1637,6 +1685,7 @@ pub async fn push_statuses(
     remote_snap: &Snapshot,
     state: &mut HostState,
     git_statuses: &HashMap<String, GitStatus>,
+    worktree_tokens: &HashMap<String, HashMap<String, String>>,
 ) {
     let agent_by_pane: HashMap<&str, &AgentInfo> =
         remote_snap.agents.iter().map(|a| (a.pane_id.as_str(), a)).collect();
@@ -1647,10 +1696,10 @@ pub async fn push_statuses(
         .collect();
     for (remote_id, entry) in state.panes.iter_mut() {
         let agent = agent_by_pane.get(remote_id.as_str()).copied();
-        let git = workspace_by_pane
-            .get(remote_id.as_str())
-            .and_then(|workspace_id| git_statuses.get(*workspace_id));
-        push_pane_status(&deps.local, &deps.host.name, remote_id, entry, agent, git, &deps.log).await;
+        let workspace_id = workspace_by_pane.get(remote_id.as_str());
+        let git = workspace_id.and_then(|workspace_id| git_statuses.get(*workspace_id));
+        let worktree = workspace_id.and_then(|workspace_id| worktree_tokens.get(*workspace_id));
+        push_pane_status(&deps.local, &deps.host.name, remote_id, entry, agent, git, worktree, &deps.log).await;
     }
 }
 
@@ -1832,6 +1881,50 @@ mod tests {
         assert_eq!(super::formatted_git_status(&no_status), "main");
     }
 
+    fn workspace(worktree: Option<WorktreeInfo>) -> WsInfo {
+        WsInfo {
+            workspace_id: "ws".into(),
+            label: "remote label".into(),
+            tab_count: None,
+            pane_count: None,
+            active_tab_id: None,
+            worktree,
+            tokens: HashMap::new(),
+        }
+    }
+
+    #[test]
+    fn worktree_labels_and_tokens_cover_linked_main_and_absent() {
+        let linked = workspace(Some(WorktreeInfo {
+            checkout_path: "/trees/skald/lane".into(),
+            repo_root: "/trees/skald".into(),
+            repo_name: "skald".into(),
+            is_linked_worktree: true,
+        }));
+        assert_eq!(workspace_label("dev-2", &linked, true), "dev-2: skald/lane");
+        let mut tokens = HashMap::new();
+        add_worktree_tokens(&mut tokens, linked.worktree.as_ref().unwrap());
+        assert_eq!(
+            tokens,
+            HashMap::from([
+                ("rrepo".into(), "skald".into()),
+                ("rworktree".into(), "/trees/skald".into()),
+                ("rcwd".into(), "/trees/skald/lane".into()),
+                ("rlinked".into(), "true".into()),
+            ])
+        );
+
+        let main = workspace(Some(WorktreeInfo {
+            checkout_path: "/trees/skald".into(),
+            repo_root: "/trees/skald".into(),
+            repo_name: "skald".into(),
+            is_linked_worktree: false,
+        }));
+        assert_eq!(workspace_label("dev-2", &main, true), "dev-2: skald/main");
+        assert_eq!(workspace_label("dev-2", &workspace(None), true), "dev-2: remote label");
+        assert_eq!(workspace_label("dev-2", &linked, false), "dev-2: remote label");
+    }
+
     use super::hidden_close_plan;
 
     fn ws_entry(local: &str, tomb: bool) -> WsEntry {
@@ -1888,6 +1981,7 @@ mod tests {
             max_rows: None,
             api_transport: crate::config::ApiTransport::Auto,
             git_branch: true,
+            worktree_metadata: true,
         }
     }
 

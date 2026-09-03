@@ -106,6 +106,9 @@ pub struct HostConfig {
     /// Forward remote checkout Git metadata to mirror workspace and agent rows.
     /// Defaults on; disable it to keep mirror metadata byte-for-byte legacy.
     pub git_branch: bool,
+    /// Forward remote worktree metadata to mirror workspace and agent rows.
+    /// Defaults on; disable it to preserve the prior labels and tokens.
+    pub worktree_metadata: bool,
     /// keep each mirror pane in control (writable, no idle release, and sized to
     /// the local pane so it fills). Default on; ideal for headless remotes. Turn
     /// off per host for a remote a human is actively using directly.
@@ -164,6 +167,7 @@ struct RawConfig {
     max_cols: Option<usize>,
     max_rows: Option<usize>,
     git_branch: Option<bool>,
+    worktree_metadata: Option<bool>,
     // toml::Table (preserve_order) keeps declaration order — the first host
     // is the remote-create fallback, so order is user-visible
     #[serde(default)]
@@ -187,6 +191,7 @@ struct RawHost {
     max_rows: Option<usize>,
     api_transport: Option<String>,
     git_branch: Option<bool>,
+    worktree_metadata: Option<bool>,
 }
 
 /// Resolve `kind` + its ref fields, rejecting combinations that would silently
@@ -267,6 +272,7 @@ pub fn parse_config(text: &str) -> Result<MirrorConfig> {
     let raw: RawConfig = toml::from_str(text)?;
     let global_always_control = raw.always_control.unwrap_or(true);
     let global_git_branch = raw.git_branch.unwrap_or(true);
+    let global_worktree_metadata = raw.worktree_metadata.unwrap_or(true);
     // 0 is treated as unset rather than "clamp to nothing", same as an empty
     // remote_bin: a cap that would starve the remote of every column is a typo,
     // not an instruction. Warn rather than dropping it silently — and say that
@@ -329,6 +335,7 @@ pub fn parse_config(text: &str) -> Result<MirrorConfig> {
             docker_bin: h.docker_bin.unwrap_or_else(|| "docker".into()),
             api_transport,
             git_branch: h.git_branch.unwrap_or(global_git_branch),
+            worktree_metadata: h.worktree_metadata.unwrap_or(global_worktree_metadata),
             kind,
             target,
             name,
@@ -381,6 +388,7 @@ mod tests {
         assert_eq!(h.session, None); // default remote session
         assert!(h.always_control); // default on
         assert!(h.git_branch); // default on
+        assert!(h.worktree_metadata); // default on
     }
 
     #[test]
@@ -428,6 +436,16 @@ mod tests {
         .unwrap();
         assert!(!c.hosts[0].git_branch);
         assert!(c.hosts[1].git_branch);
+    }
+
+    #[test]
+    fn worktree_metadata_inherits_and_overrides() {
+        let c = parse_config(
+            "worktree_metadata = false\n[hosts.a]\ntarget = \"a\"\n[hosts.b]\ntarget = \"b\"\nworktree_metadata = true\n",
+        )
+        .unwrap();
+        assert!(!c.hosts[0].worktree_metadata);
+        assert!(c.hosts[1].worktree_metadata);
     }
 
     /// A cap of 0 would starve the remote of every column. Treat it as unset,

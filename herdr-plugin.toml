@@ -55,6 +55,27 @@ description = "Pop up a picker: create the new workspace on this machine or on a
 command = ["./target/release/herdr-mirror", "pick-workspace"]
 
 [[actions]]
+id = "remote-worktree-open"
+title = "Mirror: open worktree"
+description = "Open a worktree on the remote from a mirror; opens locally elsewhere"
+command = ["./target/release/herdr-mirror", "remote-worktree-open"]
+platforms = ["macos", "linux"]
+
+[[actions]]
+id = "remote-worktree-create"
+title = "Mirror: create worktree"
+description = "Create a worktree on the remote from a mirror; creates locally elsewhere"
+command = ["./target/release/herdr-mirror", "remote-worktree-create"]
+platforms = ["macos", "linux"]
+
+[[actions]]
+id = "remote-worktree-remove"
+title = "Mirror: remove worktree"
+description = "Remove a worktree on the remote from a mirror; removes locally elsewhere"
+command = ["./target/release/herdr-mirror", "remote-worktree-remove"]
+platforms = ["macos", "linux"]
+
+[[actions]]
 id = "remote-new-tab"
 title = "Mirror: new tab"
 description = "New tab on the remote when invoked inside a mirror; a plain local tab anywhere else"

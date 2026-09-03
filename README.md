@@ -110,6 +110,11 @@ same rule as native `prefix+shift+n`, but remote): `remote-new-workspace`,
 `remote-new-tab`, `remote-split-right`, `remote-split-down`. The new object
 mirrors back within seconds.
 
+**Worktrees** — `remote-worktree-open`, `remote-worktree-create`, and
+`remote-worktree-remove` run the matching `herdr worktree` operation on the
+mirrored host, using the focused mirror's workspace and cwd; outside a mirror,
+they run locally. The resulting remote workspace mirrors back normally.
+
 **Native keys inside a mirror** — creating a tab or a split with herdr's own
 keys while focused on a mirror pane creates it on the remote, instead of
 dropping a local terminal into the mirrored workspace. The local object closes
@@ -301,6 +306,7 @@ dropped files need nothing). Uploads aren't cleaned up; `rm -rf
                          # a crash still auto-recovers on next focus.
 # poll_seconds = 60      # reconcile poll interval (events drive most syncs)
 # git_branch = true      # forward remote branch/ahead/behind metadata (default)
+# worktree_metadata = true  # forward remote repository/worktree metadata (default)
 # default_host = "work"  # host that "new remote workspace" targets when
                          # invoked outside any mirror (default: first host)
 # close_remote_on_local_close = true
@@ -320,6 +326,7 @@ dropped files need nothing). Uploads aren't cleaned up; `rm -rf
 target = "work"
 # prefix = "work"                    # sidebar prefix (default: the host key)
 # git_branch = false                 # per-host override; preserves legacy metadata
+# worktree_metadata = false           # preserves the prior workspace labels and tokens
 # remote_bin = "~/.local/bin/herdr"  # remote path if it's not on the remote PATH
 # session = "project"                # mirror a named herdr session on this host
                                      # (`herdr --session project`)
@@ -405,6 +412,13 @@ rows = [["state_icon", "workspace"], ["$rgit"]]
 marked write and config reload with `herdr-mirror sidebar-git --write`; it reads
 the marker back and refuses to overwrite an existing `[ui.sidebar.spaces]`.
 
+When `worktree_metadata` is enabled (the default), worktree-backed mirrors
+label themselves `<host>: <repo>/<worktree>` and forward `$rrepo`,
+`$rworktree` (the repository root), `$rcwd`, and `$rlinked` to workspace and
+agent rows. A main checkout is named `main`; a linked checkout uses its path
+basename. A remote without a worktree keeps its remote workspace label and
+gets none of these tokens.
+
 When `git_branch` is enabled (the default), herdr-mirror reads each remote
 workspace's checkout over the existing exec transport and forwards `$rbranch`,
 `$rahead`, `$rbehind`, and preformatted `$rgit` to its mirror workspace and
@@ -420,10 +434,10 @@ these tokens are absent rather than retaining stale values.
 - **Latency** above raw ssh: keystroke echo is a rendered frame round-trip, so
   there's a small constant delay. For latency-critical work, plain `ssh <host>`
   is always one command away.
-- **No native git chip on mirror workspaces** — herdr derives its built-in
-  branch chip from the local workspace cwd. Mirror rows instead forward remote
-  `$rbranch`, `$rahead`, `$rbehind`, and `$rgit` metadata tokens; configure
-  `[ui.sidebar.spaces]` as above to render `$rgit` on workspace rows.
+- **No native git chip or repository grouping on mirror workspaces** — herdr
+  derives both from the local workspace cwd. Mirror rows instead forward remote
+  `$rbranch`, `$rahead`, `$rbehind`, `$rgit`, and worktree metadata tokens;
+  configure `[ui.sidebar.spaces]` as above to render them on workspace rows.
 - **No custom sidebar UI** (plugin API limitation): mirrors carry a `<host>: `
   label prefix and the daemon keeps them ordered into per-host groups, but it
   can't render a richer affordance (group headers, collapse, colour).

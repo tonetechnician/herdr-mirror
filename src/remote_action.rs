@@ -175,6 +175,11 @@ pub async fn run_cmd(env: Env, kind: &str, direction: Option<&str>) -> Result<()
     report_failure(&env, &what, run(&env, kind, direction).await).await
 }
 
+pub async fn worktree_cmd(env: Env, kind: &str) -> Result<()> {
+    let what = format!("remote-worktree-{kind}");
+    report_failure(&env, &what, worktree(&env, kind).await).await
+}
+
 async fn report_failure(env: &Env, what: &str, result: Result<()>) -> Result<()> {
     let Err(e) = result else { return Ok(()) };
     if !std::io::stderr().is_terminal() {
@@ -214,10 +219,77 @@ fn local_context_value(ctx: &InvocationContext) -> Value {
     out
 }
 
-/// `remote-invoke <plugin>.<action>`: run a plugin action on the mirrored
-/// host, with the invocation context translated to the remote ids. Outside a
-/// mirror the action is invoked on the local herdr instead. A bare action id
-/// (no dot) is passed without a plugin_id for the server to resolve.
+/// Route worktree operations to the remote API when invoked from a mirror,
+/// otherwise to the local API using the same focused workspace and cwd.
+#[derive(Debug, PartialEq, Eq)]
+enum WorktreeRoute {
+    Local,
+    Remote,
+}
+
+fn worktree_route(in_mirror: bool, has_mirrored_pane: bool) -> Result<WorktreeRoute> {
+    match (in_mirror, has_mirrored_pane) {
+        (false, _) => Ok(WorktreeRoute::Local),
+        (true, true) => Ok(WorktreeRoute::Remote),
+        (true, false) => Err(err(
+            "remote worktree: the focused pane is not a mirrored pane — focus a mirror pane and retry",
+        )),
+    }
+}
+
+fn worktree_request(kind: &str, workspace_id: Option<&str>, cwd: Option<&str>) -> Result<(&'static str, Value)> {
+    let mut params = json!({});
+    if let Some(workspace_id) = workspace_id {
+        params["workspace_id"] = json!(workspace_id);
+    }
+    if matches!(kind, "open" | "create") {
+        if let Some(cwd) = cwd {
+            params["cwd"] = json!(cwd);
+        }
+        params["focus"] = json!(true);
+    }
+    let method = match kind {
+        "open" => "worktree.open",
+        "create" => "worktree.create",
+        "remove" => "worktree.remove",
+        _ => return Err(err(format!("unknown remote worktree action: {kind}"))),
+    };
+    Ok((method, params))
+}
+
+async fn worktree(env: &Env, kind: &str) -> Result<()> {
+    let ctx = invocation_context();
+    let config = load_config(&env.config_search);
+    let resolved = config.as_ref().ok().and_then(|c| resolve_context(env, &c.hosts, &ctx));
+    let route = worktree_route(
+        resolved.is_some(),
+        resolved.as_ref().and_then(|resolved| resolved.remote_pane_id.as_deref()).is_some(),
+    )?;
+
+    if route == WorktreeRoute::Local {
+        let local = crate::api::ApiClient::connect(&env.local_socket).await?;
+        let cwd = local_cwd(&local, &ctx).await?;
+        let (method, params) = worktree_request(kind, ctx.workspace_id.as_deref(), cwd.as_deref())?;
+        local.request(method, params).await?;
+        return Ok(());
+    }
+
+    let resolved = resolved.expect("remote route requires a resolved mirror");
+    let pane_id = resolved.remote_pane_id.as_deref().expect("remote route requires a mirrored pane");
+    let workspace_id = resolved.remote_ws_id.as_deref();
+    let mut remote = RemoteHost::new(&resolved.host, &env.state_dir);
+    let (api, _) = remote.connect_api().await?;
+    let snap = fetch_snapshot(&api).await?;
+    let cwd = snap
+        .panes
+        .iter()
+        .find(|pane| pane.pane_id == pane_id)
+        .and_then(|pane| pane.foreground_cwd.as_deref().or(pane.cwd.as_deref()));
+    let (method, params) = worktree_request(kind, workspace_id, cwd)?;
+    api.request(method, params).await?;
+    Ok(())
+}
+
 async fn invoke(env: &Env, spec: &str) -> Result<()> {
     // The spec goes to the server verbatim as action_id: herdr matches it
     // against bare action ids AND qualified <plugin>.<action> ids, and plugin
@@ -513,5 +585,27 @@ fn nudge_daemon(env: &Env, prefix: &str) {
             println!("{prefix} — daemon syncing now");
         }
         None => println!("{prefix} — mirrors reappear when the daemon starts"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn worktree_route_uses_remote_only_for_a_mirrored_pane() {
+        assert_eq!(worktree_route(false, false).unwrap(), WorktreeRoute::Local);
+        assert_eq!(worktree_route(true, true).unwrap(), WorktreeRoute::Remote);
+        assert!(worktree_route(true, false).is_err());
+    }
+
+    #[test]
+    fn worktree_request_preserves_workspace_and_cwd_on_both_ends() {
+        let (method, params) = worktree_request("create", Some("remote-ws"), Some("/remote/cwd")).unwrap();
+        assert_eq!(method, "worktree.create");
+        assert_eq!(params, json!({"workspace_id":"remote-ws", "cwd":"/remote/cwd", "focus":true}));
+        let (method, params) = worktree_request("remove", Some("local-ws"), Some("/ignored")).unwrap();
+        assert_eq!(method, "worktree.remove");
+        assert_eq!(params, json!({"workspace_id":"local-ws"}));
     }
 }
