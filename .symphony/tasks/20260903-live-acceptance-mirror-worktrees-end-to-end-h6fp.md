@@ -2,7 +2,7 @@
 id: "20260903-live-acceptance-mirror-worktrees-end-to-end-h6fp"
 schema: task
 title: "live acceptance: mirror groups worktrees end to end on the running build — rebuild to d3fcbd4, group read-back, remote worktree create then remove, read-backs only"
-status: open
+status: done
 section: herdr-mirror
 tier: low
 blocked_by: []
@@ -15,3 +15,4 @@ created: "2026-09-03"
 ## History
 
 - 2026-09-03 created
+- 2026-09-03T15:00:37.735Z closed without landing: live acceptance GREEN on fork main d3fcbd4: grouping engages (shadow populated), remote worktree create mirrors back inside the group, remote-worktree-remove cleans both sides; read-backs reported. Verification card, no code landing.
