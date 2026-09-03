@@ -12,6 +12,8 @@ accepted_survivors: []
 declared_removals: []
 created: "2026-09-03"
 ---
+HOUSEKEEPING FIRST: symphony bind seeded .gitignore (.pi/* and !.pi/extensions/) and an untracked treehouse.toml in the fork checkout; your first lane commit is chore(repo): add symphony pool and ignore residue carrying both, so the fork main stays clean when you land. The fork has no release artifacts beyond /target (recorded on the section).
+
 ## History
 
-- 2026-09-03 created
+- 2026-09-03 body corrected — bind residue on the fork
