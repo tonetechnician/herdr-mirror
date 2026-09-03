@@ -1,0 +1,17 @@
+---
+id: "20260903-mirror-workspace-rows-show-the-remote-git-branch-kj04"
+schema: task
+title: "mirror workspace rows show the remote git branch via a local shadow repo, plus forwarded rbranch, rahead and rbehind tokens; PR to upstream"
+status: open
+section: herdr-mirror
+tier: medium
+blocked_by: []
+paths: []
+done_when: "Composer ask 2026-09-03 morning; authorisation is that ask. READ IN FULL FIRST: /Users/threaded-dev-1/symphony-v2/scratch/conductor/CM-CARD-HERDR-MIRROR-BRANCH.md (the scan with file:line, the shape A plus B, config, failure modes, tests, live proof, deliverable). Fork tonetechnician/herdr-mirror of nikok6/herdr-mirror, Rust, cargo; this section check is cargo build --release && cargo test; trunk main. Opus is allowed with a named reason (Rust daemon, unfamiliar codebase, two interacting seams). SHAPE A: mirror workspaces today get a deliberately non-git cwd (mirror.rs:1078-1084 mirror_pane_cwd) so no chip renders; give each mirror workspace a cwd that IS a tiny local shadow git repo under ~/.local/state/herdr-mirror/shadow/<host>/<remote-ws-id>/ (git init once, no content); on each converge read the remote branch over the existing exec helper (foreground.rs:80-92; git -C <checkout_path> rev-parse --abbrev-ref HEAD, plus rev-list --left-right --count @{upstream}...HEAD when an upstream exists; the remote herdr workspace list carries worktree.checkout_path), and point the shadow HEAD at that branch name (git symbolic-ref HEAD refs/heads/<branch>, unborn is fine) so herdr renders the native chip; establish by scan what herdr reads for ahead/behind before building anything; detached remote HEAD shows the short sha; a remote workspace with no worktree keeps the marker cwd, never a wrong chip. SHAPE B: forward $rbranch, $rahead, $rbehind on the mirror workspace and its agent rows via report_metadata (mirror.rs:1105-1118, :1472); README documents both. CONFIG: git_branch = true global with per-host override, default ON; git_poll_seconds optional; off is byte-for-byte today. FAILURE MODES named: remote git missing or not a repo gives no chip and no token with one status-row note, never a stale chip; ssh failure keeps the last value with age or clears after 2x poll, say which and why. TESTS: cargo tests for branch parsing, detached, no upstream, shadow HEAD update idempotent (no rewrite when unchanged, herdr must not see churn every poll), config default and off. LIVE PROOF on this machine: the threaded-dev-2: skald mirror row shows main in the sidebar, read back from herdr workspace list (the local mirror worktree field), and a branch switch on dev-2 shows here within one poll. DELIVERABLE: landed on the fork main; herdr plugin install tonetechnician/herdr-mirror (or plugin link to the clone) here replaces the upstream install, both machines stay on herdr 0.8.0 stable; then a PR to nikok6/herdr-mirror with the README limitation line (README:406-409) rewritten; name the PR URL. Commit as Conventional Commits; symphony check at tip dirty false. Report OUTCOME, VERIFICATION (the sidebar read-back), NEXT STEP, PATHS, SHA."
+accepted_survivors: []
+declared_removals: []
+created: "2026-09-03"
+---
+## History
+
+- 2026-09-03 created
