@@ -780,6 +780,15 @@ pub fn cmd_status(env: &Env) -> Result<()> {
             "host {} ({}): {ws} mirror workspaces, {panes} mirror panes{hidden}",
             h.name, h.target
         );
+        if h.shadow_repo {
+            for (remote_id, _) in state.workspaces.iter().filter(|(_, entry)| !entry.is_tombstoned()) {
+                match crate::shadow::repo_for_workspace(&env.state_dir, &h.name, remote_id) {
+                    Ok(Some(repo)) => println!("  shadow repository for workspace {remote_id}: {}", repo.display()),
+                    Ok(None) => println!("  shadow repository for workspace {remote_id}: unavailable"),
+                    Err(e) => println!("  shadow repository for workspace {remote_id}: unreadable ({e})"),
+                }
+            }
+        }
         let tombs: Vec<String> = state
             .workspaces
             .iter()

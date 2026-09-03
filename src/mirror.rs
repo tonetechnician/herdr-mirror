@@ -7,7 +7,7 @@
 // (close the mirror).
 
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -853,6 +853,27 @@ fn worktree_repo_key(worktree: &WorktreeInfo) -> &str {
     if worktree.repo_key.is_empty() { &worktree.repo_root } else { &worktree.repo_key }
 }
 
+fn shadow_branch(workspace_id: &str, git: Option<&GitStatus>) -> String {
+    git.map(|status| status.branch.clone())
+        .unwrap_or_else(|| format!("herdr-mirror-{}", crate::util::sane_component(workspace_id)))
+}
+
+fn ensure_shadow_cwd(
+    state_dir: &Path,
+    host: &str,
+    worktree: &WorktreeInfo,
+    workspace_id: &str,
+    git: Option<&GitStatus>,
+) -> std::result::Result<PathBuf, String> {
+    crate::shadow::ensure_worktree(
+        state_dir,
+        host,
+        worktree_repo_key(worktree),
+        workspace_id,
+        &shadow_branch(workspace_id, git),
+    )
+}
+
 fn worktree_name(worktree: &WorktreeInfo) -> String {
     if !worktree.is_linked_worktree {
         return "main".into();
@@ -990,13 +1011,13 @@ async fn converge_inner(deps: &ConvergeDeps<'_>, state: &mut HostState) -> Resul
     let mut shadow_cwds: HashMap<String, PathBuf> = HashMap::new();
     if host.shadow_repo {
         for workspace in &remote_snap.workspaces {
-            let (Some(worktree), Some(git)) = (&workspace.worktree, git_statuses.get(&workspace.workspace_id)) else { continue };
-            match crate::shadow::ensure_worktree(
+            let Some(worktree) = &workspace.worktree else { continue };
+            match ensure_shadow_cwd(
                 &deps.state_dir,
                 &host.name,
-                worktree_repo_key(worktree),
+                worktree,
                 &workspace.workspace_id,
-                &git.branch,
+                git_statuses.get(&workspace.workspace_id),
             ) {
                 Ok(cwd) => {
                     shadow_cwds.insert(workspace.workspace_id.clone(), cwd);
@@ -1998,6 +2019,27 @@ mod tests {
         assert_eq!(workspace_label("dev-2", &main, true), "dev-2: skald/main");
         assert_eq!(workspace_label("dev-2", &workspace(None), true), "dev-2: remote label");
         assert_eq!(workspace_label("dev-2", &linked, false), "dev-2: remote label");
+    }
+
+    #[test]
+    fn converge_shadow_cwd_uses_a_fallback_branch_when_remote_git_is_unreadable() {
+        let state = std::env::temp_dir().join(format!("herdr-mirror-converge-shadow-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&state);
+        let worktree = WorktreeInfo {
+            checkout_path: "/trees/skald/lane".into(),
+            repo_root: "/trees/skald".into(),
+            repo_name: "skald".into(),
+            repo_key: "/trees/skald".into(),
+            is_linked_worktree: true,
+        };
+        let cwd = ensure_shadow_cwd(&state, "dev-2", &worktree, "workspace/one", None).unwrap();
+        assert_ne!(cwd, mirror_pane_cwd(&state));
+        assert!(cwd.join(".git").exists());
+        assert_eq!(
+            ensure_shadow_cwd(&state, "dev-2", &worktree, "workspace/one", None).unwrap(),
+            cwd
+        );
+        let _ = std::fs::remove_dir_all(state);
     }
 
     #[test]

@@ -27,6 +27,31 @@ pub(crate) fn worktree_path(
         .join(sane_component(workspace_id))
 }
 
+pub(crate) fn repo_for_workspace(
+    state_dir: &Path,
+    host: &str,
+    workspace_id: &str,
+) -> std::io::Result<Option<PathBuf>> {
+    let root = state_dir.join("shadow").join(sane_component(host));
+    let entries = match fs::read_dir(root) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e),
+    };
+    let mut repos = entries
+        .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+        .filter(|repo| {
+            repo.join("worktrees")
+                .join(sane_component(workspace_id))
+                .join(".git")
+                .exists()
+        })
+        .map(|repo| repo.join("repo.git"))
+        .collect::<Vec<_>>();
+    repos.sort();
+    Ok(repos.into_iter().next())
+}
+
 fn run_git(args: &[&std::ffi::OsStr]) -> Result<(), String> {
     let output = Command::new("git")
         .args(args)
@@ -175,6 +200,16 @@ mod tests {
         assert_ne!(one, worktree_path(root, "dev-3", "/trees/skald", "w1"));
         assert_ne!(one, worktree_path(root, "dev-2", "/trees/other", "w1"));
         assert_ne!(one, worktree_path(root, "dev-2", "/trees/skald", "w2"));
+    }
+
+    #[test]
+    fn shadow_repo_is_found_for_its_workspace() {
+        let dir = temp_dir("status");
+        let worktree = ensure_worktree(&dir, "dev-2", "/trees/skald", "w1", "main").unwrap();
+        let repo = repo_for_workspace(&dir, "dev-2", "w1").unwrap().unwrap();
+        assert_eq!(repo, worktree.parent().unwrap().parent().unwrap().join("repo.git"));
+        assert_eq!(repo_for_workspace(&dir, "dev-2", "missing").unwrap(), None);
+        let _ = fs::remove_dir_all(dir);
     }
 
     #[test]

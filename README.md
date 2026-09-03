@@ -314,6 +314,7 @@ dropped files need nothing). Uploads aren't cleaned up; `rm -rf
 # poll_seconds = 60      # reconcile poll interval (events drive most syncs)
 # git_branch = true      # forward remote branch/ahead/behind metadata (default)
 # worktree_metadata = true  # forward remote repository/worktree metadata (default)
+# shadow_repo = true        # give worktree mirrors local native Git grouping (default)
 # default_host = "work"  # host that "new remote workspace" targets when
                          # invoked outside any mirror (default: first host)
 # close_remote_on_local_close = true
@@ -334,6 +335,7 @@ target = "work"
 # prefix = "work"                    # sidebar prefix (default: the host key)
 # git_branch = false                 # per-host override; preserves legacy metadata
 # worktree_metadata = false           # preserves the prior workspace labels and tokens
+# shadow_repo = false                  # retains marker-directory mirror cwds
 # remote_bin = "~/.local/bin/herdr"  # remote path if it's not on the remote PATH
 # session = "project"                # mirror a named herdr session on this host
                                      # (`herdr --session project`)
@@ -426,6 +428,15 @@ agent rows. A main checkout is named `main`; a linked checkout uses its path
 basename. A remote without a worktree keeps its remote workspace label and
 gets none of these tokens.
 
+When `shadow_repo` is enabled (the default), each remote worktree mirror gets
+an empty local linked Git worktree under
+`~/.local/state/herdr-mirror/shadow/<host>/<repo-hash>/worktrees/<workspace>`.
+This gives the local workspace native repository grouping, git chips, and the
+worktree menu without touching remote content. It is independent of
+`worktree_metadata`; if the remote branch probe is unavailable, a unique local
+fallback branch still creates the shadow worktree. `herdr-mirror status` names
+the shadow repository for every mirrored workspace.
+
 When `git_branch` is enabled (the default), herdr-mirror reads each remote
 workspace's checkout over the existing exec transport and forwards `$rbranch`,
 `$rahead`, `$rbehind`, and preformatted `$rgit` to its mirror workspace and
@@ -441,10 +452,6 @@ these tokens are absent rather than retaining stale values.
 - **Latency** above raw ssh: keystroke echo is a rendered frame round-trip, so
   there's a small constant delay. For latency-critical work, plain `ssh <host>`
   is always one command away.
-- **No native git chip or repository grouping on mirror workspaces** — herdr
-  derives both from the local workspace cwd. Mirror rows instead forward remote
-  `$rbranch`, `$rahead`, `$rbehind`, `$rgit`, and worktree metadata tokens;
-  configure `[ui.sidebar.spaces]` as above to render them on workspace rows.
 - **No custom sidebar UI** (plugin API limitation): mirrors carry a `<host>: `
   label prefix and the daemon keeps them ordered into per-host groups, but it
   can't render a richer affordance (group headers, collapse, colour).
