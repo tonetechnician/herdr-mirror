@@ -5,8 +5,7 @@ title: "one upstream PR to nikok6/herdr-mirror from the fork: the four mirror la
 status: open
 section: herdr-mirror
 tier: low
-blocked_by:
-  - "20260903-a-declared-artifact-in-gitignore-form-is-checked-repo-relative-nkt9"
+blocked_by: []
 paths: []
 done_when: "Conductor ask 2026-09-03 (relay d0f3cc78). Held blocked_by the unseat fix nkt9 because all four max_trees leases are stuck; seat one musician once a tree frees. Open ONE PR to nikok6/herdr-mirror FROM tonetechnician/herdr-mirror main (tip f64f8cb at time of ask) carrying the four landings — kj04 (remote branch chip via local shadow repo + rbranch/rahead/rbehind), pt64 (remote worktree tokens rrepo/rworktree/rcwd/rlinked, labels, remote-worktree open/create/remove actions), the sidebar-git native-token fix (append $rgit to herdr's [[state_icon,workspace],[branch,git_status]] row rather than replacing it), and new-worktree (native new_worktree key routes to remote-worktree-create on mirrors) — SQUASHED into reviewable, logically-grouped commits (not one blob, not the raw landing history), each a Conventional Commit. Rewrite the README limitation line (README:406-409) to state what now works and the remaining native-grouping limit. Open a LINKED issue on nikok6/herdr-mirror explaining the token approach (shadow repo for the native chip, forwarded $r* tokens, worktree-keys/sidebar-git config writers) so reviewers have the design context, and reference it from the PR. Name the PR URL and the issue URL in the report. Do NOT force-land anything locally; this card's deliverable is the upstream PR + issue, off the already-landed fork main. Report OUTCOME, VERIFICATION (PR and issue URLs), NEXT STEP, PATHS, SHA."
 accepted_survivors: []
@@ -16,3 +15,4 @@ created: "2026-09-03"
 ## History
 
 - 2026-09-03 created
+- 2026-09-03 blocked_by: 20260903-a-declared-artifact-in-gitignore-form-is-checked-repo-relative-nkt9 ->
