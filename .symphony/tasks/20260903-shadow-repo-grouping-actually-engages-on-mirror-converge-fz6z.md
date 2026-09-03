@@ -2,7 +2,7 @@
 id: "20260903-shadow-repo-grouping-actually-engages-on-mirror-converge-fz6z"
 schema: task
 title: "the shadow-repo grouping actually engages on mirror converge: mirror cwds become shadow worktrees, the shadow dir is populated, and rows group under one repo"
-status: open
+status: done
 section: herdr-mirror
 tier: medium
 blocked_by: []
@@ -15,3 +15,4 @@ created: "2026-09-03"
 ## History
 
 - 2026-09-03 created
+- 2026-09-03T14:16:29.922Z landed task/20260903-shadow-repo-grouping-actually-engages-on-mirror-converge-fz6z on main as d3fcbd4809e7c124f3bb8c565c283b76f73b4942
