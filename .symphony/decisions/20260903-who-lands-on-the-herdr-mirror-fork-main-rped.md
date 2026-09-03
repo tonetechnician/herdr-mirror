@@ -2,7 +2,7 @@
 id: "20260903-who-lands-on-the-herdr-mirror-fork-main-rped"
 schema: decision
 title: "kj04 is audited clean but only a herdr-mirror concertmaster may land it: seat one, or rule a cross-section exception"
-status: open
+status: ruled
 awaiting: composer
 section: herdr-mirror
 options:
@@ -14,3 +14,4 @@ if_no_answer: "kj04 sits audited and unlanded at 6bbc598 on the fork; pt64 stays
 ## History
 
 - 2026-09-03 created
+- 2026-09-03 status: open -> ruled
