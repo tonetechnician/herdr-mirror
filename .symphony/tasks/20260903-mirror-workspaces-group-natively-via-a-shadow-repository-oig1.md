@@ -2,7 +2,7 @@
 id: "20260903-mirror-workspaces-group-natively-via-a-shadow-repository-oig1"
 schema: task
 title: mirror workspaces group as children and show the native chip and worktree dropdown via a per-remote-repo shadow repository whose linked worktrees are the mirror cwds
-status: open
+status: done
 section: herdr-mirror
 tier: medium
 blocked_by: []
@@ -15,3 +15,4 @@ created: "2026-09-03"
 ## History
 
 - 2026-09-03 created
+- 2026-09-03T09:55:15.012Z landed task/20260903-mirror-workspaces-group-natively-via-a-shadow-repository-oig1 on main as eda7dda9d529aa215e9cf11d96c73ec704e35ceb
