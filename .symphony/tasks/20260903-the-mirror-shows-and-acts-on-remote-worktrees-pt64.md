@@ -2,7 +2,7 @@
 id: "20260903-the-mirror-shows-and-acts-on-remote-worktrees-pt64"
 schema: task
 title: "worktree support in the mirror, plugin-encapsulated: remote worktree tokens and labels on mirror rows, and remote-worktree open, create and remove actions through the mirrored host"
-status: cued
+status: done
 section: herdr-mirror
 tier: medium
 blocked_by:
@@ -19,3 +19,4 @@ created: "2026-09-03"
 - 2026-09-03 created
 - 2026-09-03 blocked_by:  -> 20260903-mirror-workspace-rows-show-the-remote-git-branch-kj04
 - 2026-09-03 cued to herdr-mirror-worktrees; payload sha c04fdba35816
+- 2026-09-03T08:14:49.682Z landed task/20260903-the-mirror-shows-and-acts-on-remote-worktrees-pt64 on main as 168a16fcb62521101d03cb413668a35d39aba58e
