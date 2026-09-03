@@ -12,8 +12,8 @@ accepted_survivors: []
 declared_removals: []
 created: "2026-09-03"
 ---
-HOUSEKEEPING FIRST: symphony bind seeded .gitignore (.pi/* and !.pi/extensions/) and an untracked treehouse.toml in the fork checkout; your first lane commit is chore(repo): add symphony pool and ignore residue carrying both, so the fork main stays clean when you land. The fork has no release artifacts beyond /target (recorded on the section).
+SCOPE CHANGE, composer 2026-09-03 09:38 (conductor relay 16bb8220): the shadow-repo trick (part A) is NOT wanted; HOLD part A. Build part B FIRST: read the remote branch, ahead and behind over the existing ssh exec (the herdr socket snapshot carries no git fields, verified by the conductor in session.snapshot and the schema) and publish $rbranch, $rahead, $rbehind tokens via workspace.report_metadata and pane.report_metadata on the mirror rows; config git_branch default on; cargo tests; README. The conductor is scanning herdrdev/herdr for a way to render a plugin-supplied branch on the native chip without a git cwd; the final shape of the chip half follows that scan within the hour and will be appended here.
 
 ## History
 
-- 2026-09-03 body corrected — bind residue on the fork
+- 2026-09-03 body corrected — composer scope change 09:38
