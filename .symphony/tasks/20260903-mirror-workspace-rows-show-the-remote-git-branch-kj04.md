@@ -12,8 +12,8 @@ accepted_survivors: []
 declared_removals: []
 created: "2026-09-03"
 ---
-SCOPE CHANGE, composer 2026-09-03 09:38 (conductor relay 16bb8220): the shadow-repo trick (part A) is NOT wanted; HOLD part A. Build part B FIRST: read the remote branch, ahead and behind over the existing ssh exec (the herdr socket snapshot carries no git fields, verified by the conductor in session.snapshot and the schema) and publish $rbranch, $rahead, $rbehind tokens via workspace.report_metadata and pane.report_metadata on the mirror rows; config git_branch default on; cargo tests; README. The conductor is scanning herdrdev/herdr for a way to render a plugin-supplied branch on the native chip without a git cwd; the final shape of the chip half follows that scan within the hour and will be appended here.
+COMPOSER RULING 2026-09-03 09:48 (conductor relay 621295c9): herdr itself is NOT modified; the branch display must be plugin-encapsulated (rnwd withdrawn). ADDED to done_when: the plugin ships the sidebar rows config snippet that renders the token ($rgit or $rbranch/$rahead/$rbehind) on workspace rows, documented in README; and if the plugin can write or merge that snippet into ~/.config/herdr/config.toml the way its command writes keybindings, do that behind a flag (off by default, read back after writing). Landing proof: when kj04 lands on the fork main the conductor pulls the clone here, reloads, and reads the threaded-dev-2: skald row himself; report the landing sha.
 
 ## History
 
-- 2026-09-03 body corrected — composer scope change 09:38
+- 2026-09-03 body corrected — composer ruling 09:48
