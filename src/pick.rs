@@ -31,6 +31,33 @@ pub async fn summon(env: Env) -> Result<()> {
     open_popup(&api, &env).await
 }
 
+pub async fn summon_worktree(env: Env) -> Result<()> {
+    let api = ApiClient::connect(&env.local_socket).await?;
+    let mut params = json!({
+        "plugin_id": "mirror",
+        "entrypoint": "pick-worktree",
+        "placement": "popup",
+        "width": 52,
+        "height": 5,
+        "env": {},
+    });
+    for name in ["HERDR_PLUGIN_CONTEXT_JSON", "HERDR_ACTIVE_WORKSPACE_ID", "HERDR_ACTIVE_PANE_ID", "HERDR_ACTIVE_PANE_CWD"] {
+        if let Ok(value) = std::env::var(name) {
+            params["env"][name] = json!(value);
+        }
+    }
+    if let Err(e) = api.request("plugin.pane.open", params.clone()).await {
+        if e.to_string().contains("popup already open") {
+            api.request("popup.close", json!({})).await?;
+            return Ok(());
+        }
+        let mut fallback = params;
+        fallback.as_object_mut().expect("popup params are an object").remove("placement");
+        api.request("plugin.pane.open", fallback).await?;
+    }
+    Ok(())
+}
+
 async fn open_popup(api: &ApiClient, env: &Env) -> Result<()> {
     // size the popup to its content: options + title + hints + border. Width
     // tracks the longest row (name + its dim subtitle) so targets and the cwd
@@ -553,6 +580,19 @@ fn tilde(path: &str) -> String {
 
 /// Popup leg: draw the menu, take one choice, create, exit. Sync on purpose —
 /// the menu is a blocking keyboard loop; only the create at the end is async.
+pub fn worktree_menu(rt: &tokio::runtime::Runtime, env: Env) -> Result<()> {
+    print!("\r\n  New worktree branch: ");
+    std::io::stdout().flush()?;
+    let mut branch = String::new();
+    std::io::stdin().read_line(&mut branch)?;
+    let branch = branch.trim();
+    if branch.is_empty() {
+        println!("cancelled");
+        return Ok(());
+    }
+    rt.block_on(crate::remote_action::create_worktree(env, branch))
+}
+
 pub fn menu(rt: &tokio::runtime::Runtime, env: Env) -> Result<()> {
     // a broken hosts.toml must not brick the picker: local creation needs no
     // hosts, so degrade to a local-only menu and show why

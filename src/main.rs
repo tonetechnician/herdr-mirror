@@ -104,6 +104,7 @@ fn run_on(rt: &tokio::runtime::Runtime, cmd: &str, rest: &[String]) -> Result<()
                 rt.block_on(pick::summon(Env::resolve()?))
             }
         }
+        "pick-worktree" => pick::worktree_menu(rt, Env::resolve()?),
         "intercept-new" => {
             // creation hooks — cheap, silent no-op when nothing matches
             let what = rest.get(1).map(String::as_str).unwrap_or("workspace");
@@ -138,6 +139,11 @@ fn run_on(rt: &tokio::runtime::Runtime, cmd: &str, rest: &[String]) -> Result<()
             Some("--write") => rt.block_on(binding::sidebar_git(Env::resolve()?, true)),
             _ => Err(util::err("usage: herdr-mirror sidebar-git [--write]")),
         },
+        "worktree-keys" => match rest.get(1).map(String::as_str) {
+            None => rt.block_on(binding::worktree_keys(Env::resolve()?, false)),
+            Some("--write") => rt.block_on(binding::worktree_keys(Env::resolve()?, true)),
+            _ => Err(util::err("usage: herdr-mirror worktree-keys [--write]")),
+        },
         "unbind" => {
             let what = rest
                 .get(1)
@@ -145,7 +151,7 @@ fn run_on(rt: &tokio::runtime::Runtime, cmd: &str, rest: &[String]) -> Result<()
             rt.block_on(binding::unbind(Env::resolve()?, what))
         }
         other => Err(util::err(format!(
-            "unknown command: {other} (daemon|pane|start|pause|ensure|status|once|restore|teardown|hide|show|pick-workspace|remote-workspace|remote-worktree-open|remote-worktree-create|remote-worktree-remove|remote-tab|remote-split|remote-invoke|remote-actions|bind|sidebar-git|unbind)"
+            "unknown command: {other} (daemon|pane|start|pause|ensure|status|once|restore|teardown|hide|show|pick-workspace|pick-worktree|remote-workspace|remote-worktree-open|remote-worktree-create|remote-worktree-remove|remote-tab|remote-split|remote-invoke|remote-actions|bind|sidebar-git|worktree-keys|unbind)"
         ))),
     }
 }

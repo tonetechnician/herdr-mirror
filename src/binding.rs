@@ -27,6 +27,9 @@ const CLI_PATH: &str = "~/.local/bin/herdr-mirror";
 
 const MARKER: &str = "# herdr-mirror bind:";
 const SIDEBAR_GIT_MARKER: &str = "# herdr-mirror sidebar-git:";
+const WORKTREE_KEYS_MARKER: &str = "# herdr-mirror worktree-keys:";
+const NATIVE_WORKTREE_KEY: &str = "prefix+shift+g";
+const FALLBACK_WORKTREE_KEY: &str = "prefix+alt+shift+g";
 
 fn herdr_config_path() -> PathBuf {
     // same precedence herdr's own config_path() uses
@@ -132,6 +135,26 @@ fn append_sidebar_git(content: &str) -> Result<String> {
         merged.insert_str(section, &format!("{SIDEBAR_GIT_MARKER}\n"));
     }
     Ok(merged)
+}
+
+fn worktree_keys_block() -> String {
+    format!(
+        "\n{WORKTREE_KEYS_MARKER}\n[keys]\nnew_worktree = \"{FALLBACK_WORKTREE_KEY}\"\n\n[[keys.command]]\nkey = \"{NATIVE_WORKTREE_KEY}\"\ntype = \"shell\"\ncommand = \"{CLI_PATH} remote-worktree-create\"\n"
+    )
+}
+
+fn append_worktree_keys(content: &str) -> Result<String> {
+    if content.contains(WORKTREE_KEYS_MARKER) {
+        return Ok(content.to_string());
+    }
+    let mut document = content.parse::<toml_edit::DocumentMut>().map_err(|e| {
+        err(format!("cannot merge worktree keys into invalid TOML: {e}"))
+    })?;
+    document["keys"]["new_worktree"] = toml_edit::value(FALLBACK_WORKTREE_KEY);
+    Ok(format!(
+        "{}\n{WORKTREE_KEYS_MARKER}\n[[keys.command]]\nkey = \"{NATIVE_WORKTREE_KEY}\"\ntype = \"shell\"\ncommand = \"{CLI_PATH} remote-worktree-create\"\n",
+        document
+    ))
 }
 
 fn binding_block(spec: &str, key: &str) -> String {
@@ -299,6 +322,30 @@ pub async fn bind(env: Env, spec: &str, key: &str) -> Result<()> {
 }
 
 /// Print or, with `--write`, append the workspace sidebar row for `$rgit`.
+pub async fn worktree_keys(env: Env, write: bool) -> Result<()> {
+    if !write {
+        print!("{}", worktree_keys_block());
+        return Ok(());
+    }
+    let api = crate::api::ApiClient::connect(&env.local_socket).await?;
+    let path = herdr_config_path();
+    let content = match fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => return Err(err(format!("cannot read {}: {e}", path.display()))),
+    };
+    let merged = append_worktree_keys(&content)?;
+    write_config(&path, &merged)?;
+    let read_back = fs::read_to_string(&path)
+        .map_err(|e| err(format!("cannot read back {}: {e}", path.display())))?;
+    if !read_back.contains(WORKTREE_KEYS_MARKER) || !read_back.contains("new_worktree") {
+        return Err(err(format!("worktree keys were not recorded in {}", path.display())));
+    }
+    api.request("server.reload_config", json!({})).await?;
+    println!("wrote and read back worktree keys in {}; reloaded herdr config", path.display());
+    Ok(())
+}
+
 pub async fn sidebar_git(env: Env, write: bool) -> Result<()> {
     if !write {
         print!("{}", sidebar_git_block());
@@ -335,7 +382,7 @@ pub async fn sidebar_git(env: Env, write: bool) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{append_sidebar_git, sidebar_git_block, SIDEBAR_GIT_MARKER};
+    use super::{append_sidebar_git, append_worktree_keys, sidebar_git_block, worktree_keys_block, SIDEBAR_GIT_MARKER};
 
     fn sidebar_rows(config: &str) -> Vec<Vec<String>> {
         toml::from_str::<toml::Value>(config)
@@ -359,6 +406,22 @@ mod tests {
         assert!(rows[1].iter().any(|token| token == "branch"));
         assert!(rows[1].iter().any(|token| token == "git_status"));
         assert_eq!(rows[1].last().unwrap(), "$rgit");
+    }
+
+    #[test]
+    fn writes_native_worktree_fallback_before_remote_binding() {
+        let block = worktree_keys_block();
+        assert!(block.contains("new_worktree = \"prefix+alt+shift+g\""));
+        assert!(block.contains("key = \"prefix+shift+g\""));
+        assert!(block.contains("remote-worktree-create"));
+    }
+
+    #[test]
+    fn adds_worktree_keys_once_without_changing_other_config() {
+        let config = "[ui]\naccent = \"blue\"\n";
+        let merged = append_worktree_keys(config).unwrap();
+        assert!(merged.contains("[ui]\naccent = \"blue\""));
+        assert_eq!(append_worktree_keys(&merged).unwrap(), merged);
     }
 
     #[test]

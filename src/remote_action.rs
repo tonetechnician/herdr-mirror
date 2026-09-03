@@ -176,8 +176,15 @@ pub async fn run_cmd(env: Env, kind: &str, direction: Option<&str>) -> Result<()
 }
 
 pub async fn worktree_cmd(env: Env, kind: &str) -> Result<()> {
+    if kind == "create" {
+        return crate::pick::summon_worktree(env).await;
+    }
     let what = format!("remote-worktree-{kind}");
-    report_failure(&env, &what, worktree(&env, kind).await).await
+    report_failure(&env, &what, worktree(&env, kind, None).await).await
+}
+
+pub async fn create_worktree(env: Env, branch: &str) -> Result<()> {
+    report_failure(&env, "remote-worktree-create", worktree(&env, "create", Some(branch)).await).await
 }
 
 async fn report_failure(env: &Env, what: &str, result: Result<()>) -> Result<()> {
@@ -237,7 +244,7 @@ fn worktree_route(in_mirror: bool, has_mirrored_pane: bool) -> Result<WorktreeRo
     }
 }
 
-fn worktree_request(kind: &str, workspace_id: Option<&str>, cwd: Option<&str>) -> Result<(&'static str, Value)> {
+fn worktree_request(kind: &str, workspace_id: Option<&str>, cwd: Option<&str>, branch: Option<&str>) -> Result<(&'static str, Value)> {
     let mut params = json!({});
     if let Some(workspace_id) = workspace_id {
         params["workspace_id"] = json!(workspace_id);
@@ -248,6 +255,10 @@ fn worktree_request(kind: &str, workspace_id: Option<&str>, cwd: Option<&str>) -
         }
         params["focus"] = json!(true);
     }
+    if kind == "create" {
+        let branch = branch.ok_or_else(|| err("worktree branch is required"))?;
+        params["branch"] = json!(branch);
+    }
     let method = match kind {
         "open" => "worktree.open",
         "create" => "worktree.create",
@@ -257,7 +268,7 @@ fn worktree_request(kind: &str, workspace_id: Option<&str>, cwd: Option<&str>) -
     Ok((method, params))
 }
 
-async fn worktree(env: &Env, kind: &str) -> Result<()> {
+async fn worktree(env: &Env, kind: &str, branch: Option<&str>) -> Result<()> {
     let ctx = invocation_context();
     let config = load_config(&env.config_search);
     let resolved = config.as_ref().ok().and_then(|c| resolve_context(env, &c.hosts, &ctx));
@@ -269,7 +280,7 @@ async fn worktree(env: &Env, kind: &str) -> Result<()> {
     if route == WorktreeRoute::Local {
         let local = crate::api::ApiClient::connect(&env.local_socket).await?;
         let cwd = local_cwd(&local, &ctx).await?;
-        let (method, params) = worktree_request(kind, ctx.workspace_id.as_deref(), cwd.as_deref())?;
+        let (method, params) = worktree_request(kind, ctx.workspace_id.as_deref(), cwd.as_deref(), branch)?;
         local.request(method, params).await?;
         return Ok(());
     }
@@ -285,7 +296,7 @@ async fn worktree(env: &Env, kind: &str) -> Result<()> {
         .iter()
         .find(|pane| pane.pane_id == pane_id)
         .and_then(|pane| pane.foreground_cwd.as_deref().or(pane.cwd.as_deref()));
-    let (method, params) = worktree_request(kind, workspace_id, cwd)?;
+    let (method, params) = worktree_request(kind, workspace_id, cwd, branch)?;
     api.request(method, params).await?;
     Ok(())
 }
@@ -601,10 +612,11 @@ mod tests {
 
     #[test]
     fn worktree_request_preserves_workspace_and_cwd_on_both_ends() {
-        let (method, params) = worktree_request("create", Some("remote-ws"), Some("/remote/cwd")).unwrap();
+        let (method, params) = worktree_request("create", Some("remote-ws"), Some("/remote/cwd"), Some("topic")).unwrap();
         assert_eq!(method, "worktree.create");
-        assert_eq!(params, json!({"workspace_id":"remote-ws", "cwd":"/remote/cwd", "focus":true}));
-        let (method, params) = worktree_request("remove", Some("local-ws"), Some("/ignored")).unwrap();
+        assert_eq!(params, json!({"workspace_id":"remote-ws","cwd":"/remote/cwd","focus":true,"branch":"topic"}));
+        assert!(worktree_request("create", Some("remote-ws"), Some("/remote/cwd"), None).is_err());
+        let (method, params) = worktree_request("remove", Some("local-ws"), Some("/ignored"), None).unwrap();
         assert_eq!(method, "worktree.remove");
         assert_eq!(params, json!({"workspace_id":"local-ws"}));
     }

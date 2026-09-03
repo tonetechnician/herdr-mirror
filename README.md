@@ -243,6 +243,13 @@ command = "mirror.remote-split-down"
 The tradeoff: those keys now depend on this plugin being installed and enabled,
 since the native binding no longer covers them.
 
+**Native worktree key** — `herdr-mirror worktree-keys --write` moves herdr's
+`new_worktree` binding from `prefix+shift+g` to `prefix+alt+shift+g`, then binds
+`prefix+shift+g` to `remote-worktree-create`. The action opens a branch-name
+popup, creates that branch's worktree on the focused mirror's host, and otherwise
+uses the local worktree action. The command writes a marked, atomic block and
+reloads herdr. Until `--write`, it leaves the config byte-for-byte unchanged.
+
 ### Remote plugin keys
 
 `remote-invoke` takes the action to forward as an argument, which plugin

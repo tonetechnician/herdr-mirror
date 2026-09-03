@@ -18,6 +18,11 @@ id = "pick-host"
 title = "New workspace"
 command = ["./target/release/herdr-mirror", "pick-workspace", "--menu"]
 
+[[panes]]
+id = "pick-worktree"
+title = "New worktree"
+command = ["./target/release/herdr-mirror", "pick-worktree"]
+
 [[actions]]
 id = "start"
 title = "Mirror: start / resume"
