@@ -2,7 +2,7 @@
 id: "20260903-upstream-herdr-renders-plugin-supplied-branch-on-the-native-chip-rnwd"
 schema: task
 title: "upstream herdr patch: the workspace chip falls back to plugin tokens branch, ahead and behind when cached git is None; fork, PR and issue"
-status: open
+status: withdrawn
 section: herdr-mirror
 tier: low
 blocked_by: []
@@ -15,3 +15,4 @@ created: "2026-09-03"
 ## History
 
 - 2026-09-03 created
+- 2026-09-03T07:48:27.477Z withdrawn by symphony-concertmaster: composer: herdr itself is not modified
