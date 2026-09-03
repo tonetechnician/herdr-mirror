@@ -40,6 +40,10 @@ pub struct WorktreeInfo {
     pub checkout_path: String,
     pub repo_root: String,
     pub repo_name: String,
+    /// Stable repository identity supplied by newer herdr servers. Falling back
+    /// to repo_root keeps older remotes grouped without merging distinct repos.
+    #[serde(default)]
+    pub repo_key: String,
     pub is_linked_worktree: bool,
 }
 
@@ -768,6 +772,20 @@ fn mirror_pane_cwd(state_dir: &std::path::Path) -> std::path::PathBuf {
     state_dir.join(MIRROR_CWD_MARKER)
 }
 
+fn mirror_workspace_cwd(
+    state_dir: &std::path::Path,
+    workspace: &WsInfo,
+    shadow_repo: bool,
+    shadow_cwds: &HashMap<String, PathBuf>,
+) -> PathBuf {
+    if shadow_repo && workspace.worktree.is_some() {
+        if let Some(cwd) = shadow_cwds.get(&workspace.workspace_id) {
+            return cwd.clone();
+        }
+    }
+    mirror_pane_cwd(state_dir)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct GitStatus {
     branch: String,
@@ -829,6 +847,10 @@ fn add_worktree_tokens(tokens: &mut HashMap<String, String>, worktree: &Worktree
     tokens.insert("rworktree".into(), worktree.repo_root.clone());
     tokens.insert("rcwd".into(), worktree.checkout_path.clone());
     tokens.insert("rlinked".into(), worktree.is_linked_worktree.to_string());
+}
+
+fn worktree_repo_key(worktree: &WorktreeInfo) -> &str {
+    if worktree.repo_key.is_empty() { &worktree.repo_root } else { &worktree.repo_key }
 }
 
 fn worktree_name(worktree: &WorktreeInfo) -> String {
@@ -936,14 +958,63 @@ async fn converge_inner(deps: &ConvergeDeps<'_>, state: &mut HostState) -> Resul
     let cmd_for = cmd_for_pane(&deps.host, &deps.state_dir, &sizes);
     let _ = std::fs::create_dir_all(mirror_pane_cwd(&deps.state_dir));
     let mut git_statuses: HashMap<String, GitStatus> = HashMap::new();
-    if host.git_branch {
+    if host.git_branch || host.shadow_repo {
         for workspace in &remote_snap.workspaces {
             let Some(worktree) = &workspace.worktree else { continue };
             match remote_git_status(deps.remote_host, &worktree.checkout_path).await {
                 Some(git) => {
                     git_statuses.insert(workspace.workspace_id.clone(), git);
                 }
-                None => log.log(&format!("[{}] no git branch for remote workspace {}", host.name, workspace.workspace_id)),
+                None => {
+                    let shadow = crate::shadow::worktree_path(
+                        &deps.state_dir,
+                        &host.name,
+                        worktree_repo_key(worktree),
+                        &workspace.workspace_id,
+                    );
+                    match host.shadow_repo.then(|| crate::shadow::note_unreadable_branch(&shadow)).flatten() {
+                        Some(1) => log.log(&format!(
+                            "[{}] remote branch unreadable for workspace {}; retaining shadow HEAD (1 poll)",
+                            host.name, workspace.workspace_id
+                        )),
+                        Some(_) => {}
+                        None => log.log(&format!(
+                            "[{}] no git branch for remote workspace {}",
+                            host.name, workspace.workspace_id
+                        )),
+                    }
+                },
+            }
+        }
+    }
+    let mut shadow_cwds: HashMap<String, PathBuf> = HashMap::new();
+    if host.shadow_repo {
+        for workspace in &remote_snap.workspaces {
+            let (Some(worktree), Some(git)) = (&workspace.worktree, git_statuses.get(&workspace.workspace_id)) else { continue };
+            match crate::shadow::ensure_worktree(
+                &deps.state_dir,
+                &host.name,
+                worktree_repo_key(worktree),
+                &workspace.workspace_id,
+                &git.branch,
+            ) {
+                Ok(cwd) => {
+                    shadow_cwds.insert(workspace.workspace_id.clone(), cwd);
+                }
+                Err(e) => {
+                    let shadow = crate::shadow::worktree_path(
+                        &deps.state_dir,
+                        &host.name,
+                        worktree_repo_key(worktree),
+                        &workspace.workspace_id,
+                    );
+                    if crate::shadow::first_setup_error(&shadow) {
+                        log.log(&format!(
+                            "[{}] shadow repository unavailable for remote workspace {}: {e}; keeping marker cwd",
+                            host.name, workspace.workspace_id
+                        ));
+                    }
+                },
             }
         }
     }
@@ -1192,9 +1263,9 @@ async fn converge_inner(deps: &ConvergeDeps<'_>, state: &mut HostState) -> Resul
                 struct CreatedTab {
                     tab_id: String,
                 }
-                // Keep the marker cwd: branch metadata is forwarded below, while
-                // native chip synthesis requires a separate herdr capability scan.
-                let cwd = mirror_pane_cwd(&deps.state_dir).display().to_string();
+                let cwd = mirror_workspace_cwd(&deps.state_dir, rws, host.shadow_repo, &shadow_cwds)
+                    .display()
+                    .to_string();
                 let created: Created = deps
                     .local
                     .request_t("workspace.create", json!({ "label": label, "cwd": cwd, "focus": false }))
@@ -1224,8 +1295,10 @@ async fn converge_inner(deps: &ConvergeDeps<'_>, state: &mut HostState) -> Resul
         if let Some(worktree) = worktree_tokens.get(&rws.workspace_id) {
             tokens.extend(worktree.clone());
         }
-        if let Some(git) = git_statuses.get(&rws.workspace_id) {
-            add_git_tokens(&mut tokens, git);
+        if host.git_branch {
+            if let Some(git) = git_statuses.get(&rws.workspace_id) {
+                add_git_tokens(&mut tokens, git);
+            }
         }
         if tokens.is_empty() {
             continue;
@@ -1899,6 +1972,7 @@ mod tests {
             checkout_path: "/trees/skald/lane".into(),
             repo_root: "/trees/skald".into(),
             repo_name: "skald".into(),
+            repo_key: "/trees/skald".into(),
             is_linked_worktree: true,
         }));
         assert_eq!(workspace_label("dev-2", &linked, true), "dev-2: skald/lane");
@@ -1918,11 +1992,29 @@ mod tests {
             checkout_path: "/trees/skald".into(),
             repo_root: "/trees/skald".into(),
             repo_name: "skald".into(),
+            repo_key: "/trees/skald".into(),
             is_linked_worktree: false,
         }));
         assert_eq!(workspace_label("dev-2", &main, true), "dev-2: skald/main");
         assert_eq!(workspace_label("dev-2", &workspace(None), true), "dev-2: remote label");
         assert_eq!(workspace_label("dev-2", &linked, false), "dev-2: remote label");
+    }
+
+    #[test]
+    fn shadow_cwd_skips_worktree_less_remotes_and_config_off() {
+        let state = std::path::Path::new("/state");
+        let linked = workspace(Some(WorktreeInfo {
+            checkout_path: "/trees/skald/lane".into(),
+            repo_root: "/trees/skald".into(),
+            repo_name: "skald".into(),
+            repo_key: "/trees/skald".into(),
+            is_linked_worktree: true,
+        }));
+        let shadow = PathBuf::from("/state/shadow/dev/skald/worktrees/ws");
+        let cwds = HashMap::from([("ws".into(), shadow.clone())]);
+        assert_eq!(mirror_workspace_cwd(state, &linked, true, &cwds), shadow);
+        assert_eq!(mirror_workspace_cwd(state, &linked, false, &cwds), mirror_pane_cwd(state));
+        assert_eq!(mirror_workspace_cwd(state, &workspace(None), true, &cwds), mirror_pane_cwd(state));
     }
 
     use super::hidden_close_plan;
@@ -1982,6 +2074,7 @@ mod tests {
             api_transport: crate::config::ApiTransport::Auto,
             git_branch: true,
             worktree_metadata: true,
+            shadow_repo: true,
         }
     }
 

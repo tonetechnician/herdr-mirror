@@ -615,6 +615,7 @@ mod tests {
             api_transport: ApiTransport::Auto,
             git_branch: true,
             worktree_metadata: true,
+            shadow_repo: true,
             always_control: true,
         }
     }
