@@ -12,8 +12,8 @@ accepted_survivors: []
 declared_removals: []
 created: "2026-09-03"
 ---
-COMPOSER RULING 2026-09-03 09:48 (conductor relay 621295c9): herdr itself is NOT modified; the branch display must be plugin-encapsulated (rnwd withdrawn). ADDED to done_when: the plugin ships the sidebar rows config snippet that renders the token ($rgit or $rbranch/$rahead/$rbehind) on workspace rows, documented in README; and if the plugin can write or merge that snippet into ~/.config/herdr/config.toml the way its command writes keybindings, do that behind a flag (off by default, read back after writing). Landing proof: when kj04 lands on the fork main the conductor pulls the clone here, reloads, and reads the threaded-dev-2: skald row himself; report the landing sha.
+HANDOVER 2026-09-03 10:01 from symphony-concertmaster to herdr-mirror-concertmaster: audit of tip 6bbc598 is recorded on decision 20260903-who-lands-on-the-herdr-mirror-fork-main-rped (clean; landable on your predicate). Landing proof after landing: the conductor plugin-links the clone, runs sidebar-git --write, reloads and reads the threaded-dev-2: skald row. Then seat pt64 (blocked_by this card). symphony-concertmaster acts for this section no more.
 
 ## History
 
-- 2026-09-03 body corrected — composer ruling 09:48
+- 2026-09-03 body corrected — handover to the section concertmaster
