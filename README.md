@@ -300,6 +300,7 @@ dropped files need nothing). Uploads aren't cleaned up; `rm -rf
                          # A manual pause is sticky until you start again;
                          # a crash still auto-recovers on next focus.
 # poll_seconds = 60      # reconcile poll interval (events drive most syncs)
+# git_branch = true      # forward remote branch/ahead/behind metadata (default)
 # default_host = "work"  # host that "new remote workspace" targets when
                          # invoked outside any mirror (default: first host)
 # close_remote_on_local_close = true
@@ -318,6 +319,7 @@ dropped files need nothing). Uploads aren't cleaned up; `rm -rf
 [hosts.work]
 target = "work"
 # prefix = "work"                    # sidebar prefix (default: the host key)
+# git_branch = false                 # per-host override; preserves legacy metadata
 # remote_bin = "~/.local/bin/herdr"  # remote path if it's not on the remote PATH
 # session = "project"                # mirror a named herdr session on this host
                                      # (`herdr --session project`)
@@ -393,8 +395,23 @@ Locally, name it in a sidebar row (`~/.config/herdr/config.toml`):
 
 ```toml
 [ui.sidebar.agents]
-rows = [["state_icon", "workspace"], ["state_text", "agent"], ["$rcwd"]]
+rows = [["state_icon", "workspace"], ["state_text", "agent"], ["$rcwd"], ["$rgit"]]
+
+[ui.sidebar.spaces]
+rows = [["state_icon", "workspace"], ["$rgit"]]
 ```
+
+`herdr-mirror sidebar-git` prints that workspace snippet. Opt in to an atomic,
+marked write and config reload with `herdr-mirror sidebar-git --write`; it reads
+the marker back and refuses to overwrite an existing `[ui.sidebar.spaces]`.
+
+When `git_branch` is enabled (the default), herdr-mirror reads each remote
+workspace's checkout over the existing exec transport and forwards `$rbranch`,
+`$rahead`, `$rbehind`, and preformatted `$rgit` to its mirror workspace and
+agent rows. `$rgit` uses herdr's Git arrows (`main ↑1 ↓2`) and omits a zero
+count. A detached checkout reports its short SHA; a checkout without an
+upstream reports zero for ahead and behind. If Git cannot read the checkout,
+these tokens are absent rather than retaining stale values.
 
 ## Limitations
 
@@ -403,10 +420,10 @@ rows = [["state_icon", "workspace"], ["state_text", "agent"], ["$rcwd"]]
 - **Latency** above raw ssh: keystroke echo is a rendered frame round-trip, so
   there's a small constant delay. For latency-critical work, plain `ssh <host>`
   is always one command away.
-- **No git status on mirror rows** — herdr derives the sidebar git branch and
-  ahead/behind from the local workspace cwd, and there's no API to feed it a
-  remote repo's state, so mirror workspaces show no git chip. The remote's real
-  branch and status stay visible in the streamed pane's prompt.
+- **No native git chip on mirror workspaces** — herdr derives its built-in
+  branch chip from the local workspace cwd. Mirror rows instead forward remote
+  `$rbranch`, `$rahead`, `$rbehind`, and `$rgit` metadata tokens; configure
+  `[ui.sidebar.spaces]` as above to render `$rgit` on workspace rows.
 - **No custom sidebar UI** (plugin API limitation): mirrors carry a `<host>: `
   label prefix and the daemon keeps them ordered into per-host groups, but it
   can't render a richer affordance (group headers, collapse, colour).

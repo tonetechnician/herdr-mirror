@@ -149,7 +149,7 @@ async fn flush_status(ctx: &HostCtx, pending: HashMap<String, Value>) -> bool {
         }
         let info: AgentInfo = serde_json::from_value(data).unwrap_or_default();
         let agent = info.has_agent().then_some(&info);
-        push_pane_status(&ctx.local, &ctx.host.name, &remote_id, entry, agent, &ctx.log).await;
+        push_pane_status(&ctx.local, &ctx.host.name, &remote_id, entry, agent, None, &ctx.log).await;
     }
     if let Err(e) = save_state(&ctx.env_state_dir, &ctx.host.name, &state) {
         ctx.log.log(&format!("[{}] state save failed: {e}", ctx.host.name));
@@ -203,6 +203,7 @@ async fn run_connected(
     let deps = ConvergeDeps {
         local: ctx.local.clone(),
         remote: remote.clone(),
+        remote_host: &remote_host,
         host: ctx.host.clone(),
         state_dir: ctx.env_state_dir.clone(),
         log: ctx.log.clone(),
@@ -816,6 +817,7 @@ pub async fn cmd_once(env: Env) -> Result<()> {
         converge(&ConvergeDeps {
             local: local.clone(),
             remote,
+            remote_host: &remote_host,
             host: h.clone(),
             state_dir: env.state_dir.clone(),
             log: log.clone(),

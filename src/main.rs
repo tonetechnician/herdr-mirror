@@ -10,6 +10,7 @@
 //   herdr-mirror remote-invoke <plugin>.<action>
 //   herdr-mirror remote-actions [host]              # discovery
 //   herdr-mirror bind|unbind ...                    # keybinding setup
+//   herdr-mirror sidebar-git [--write]              # workspace Git token row
 
 mod api;
 mod binding;
@@ -128,6 +129,11 @@ fn run_on(rt: &tokio::runtime::Runtime, cmd: &str, rest: &[String]) -> Result<()
             (Some(spec), Some(key)) => rt.block_on(binding::bind(Env::resolve()?, spec, key)),
             _ => Err(util::err("usage: herdr-mirror bind <plugin>.<action> <key>")),
         },
+        "sidebar-git" => match rest.get(1).map(String::as_str) {
+            None => rt.block_on(binding::sidebar_git(Env::resolve()?, false)),
+            Some("--write") => rt.block_on(binding::sidebar_git(Env::resolve()?, true)),
+            _ => Err(util::err("usage: herdr-mirror sidebar-git [--write]")),
+        },
         "unbind" => {
             let what = rest
                 .get(1)
@@ -135,7 +141,7 @@ fn run_on(rt: &tokio::runtime::Runtime, cmd: &str, rest: &[String]) -> Result<()
             rt.block_on(binding::unbind(Env::resolve()?, what))
         }
         other => Err(util::err(format!(
-            "unknown command: {other} (daemon|pane|start|pause|ensure|status|once|restore|teardown|hide|show|pick-workspace|remote-workspace|remote-tab|remote-split|remote-invoke|remote-actions|bind|unbind)"
+            "unknown command: {other} (daemon|pane|start|pause|ensure|status|once|restore|teardown|hide|show|pick-workspace|remote-workspace|remote-tab|remote-split|remote-invoke|remote-actions|bind|sidebar-git|unbind)"
         ))),
     }
 }

@@ -26,6 +26,7 @@ use crate::util::{err, home_dir, Env, Result};
 const CLI_PATH: &str = "~/.local/bin/herdr-mirror";
 
 const MARKER: &str = "# herdr-mirror bind:";
+const SIDEBAR_GIT_MARKER: &str = "# herdr-mirror sidebar-git:";
 
 fn herdr_config_path() -> PathBuf {
     // same precedence herdr's own config_path() uses
@@ -87,6 +88,24 @@ fn write_config(path: &PathBuf, content: &str) -> Result<()> {
     let tmp = path.with_extension("toml.herdr-mirror-tmp");
     fs::write(&tmp, content).map_err(|e| err(format!("cannot write {}: {e}", tmp.display())))?;
     fs::rename(&tmp, path).map_err(|e| err(format!("cannot replace {}: {e}", path.display())))
+}
+
+fn sidebar_git_block() -> String {
+    format!(
+        "\n{SIDEBAR_GIT_MARKER}\n[ui.sidebar.spaces]\nrows = [[\"state_icon\", \"workspace\"], [\"$rgit\"]]\n"
+    )
+}
+
+fn append_sidebar_git(content: &str) -> Result<String> {
+    if content.contains(SIDEBAR_GIT_MARKER) {
+        return Ok(content.to_string());
+    }
+    let parsed: toml::Value = toml::from_str(content)
+        .map_err(|e| err(format!("cannot merge sidebar Git rows into invalid TOML: {e}")))?;
+    if parsed.get("ui").and_then(|ui| ui.get("sidebar")).and_then(|sidebar| sidebar.get("spaces")).is_some() {
+        return Err(err("[ui.sidebar.spaces] already exists; add $rgit to its rows manually"));
+    }
+    Ok(format!("{content}{}", sidebar_git_block()))
 }
 
 fn binding_block(spec: &str, key: &str) -> String {
@@ -251,6 +270,60 @@ pub async fn bind(env: Env, spec: &str, key: &str) -> Result<()> {
     api.request("server.reload_config", json!({})).await?;
     println!("reloaded herdr config; {key} is live");
     Ok(())
+}
+
+/// Print or, with `--write`, append the workspace sidebar row for `$rgit`.
+pub async fn sidebar_git(env: Env, write: bool) -> Result<()> {
+    if !write {
+        print!("{}", sidebar_git_block());
+        return Ok(());
+    }
+
+    let api = crate::api::ApiClient::connect(&env.local_socket).await?;
+    let path = herdr_config_path();
+    let content = match fs::read_to_string(&path) {
+        Ok(content) => content,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            String::new()
+        }
+        Err(e) => return Err(err(format!("cannot read {}: {e}", path.display()))),
+    };
+    let merged = append_sidebar_git(&content)?;
+    if merged == content {
+        println!("workspace sidebar Git row already managed in {}", path.display());
+        return Ok(());
+    }
+    write_config(&path, &merged)?;
+    let read_back = fs::read_to_string(&path)
+        .map_err(|e| err(format!("cannot read back {}: {e}", path.display())))?;
+    if !read_back.contains(SIDEBAR_GIT_MARKER) {
+        return Err(err(format!("sidebar Git row was not recorded in {}", path.display())));
+    }
+    api.request("server.reload_config", json!({})).await?;
+    println!("wrote and read back workspace sidebar Git row in {}; reloaded herdr config", path.display());
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::append_sidebar_git;
+
+    #[test]
+    fn adds_the_workspace_git_row_once() {
+        let merged = append_sidebar_git("[ui.sidebar.agents]\nrows = [[\"agent\"]]\n").unwrap();
+        assert!(merged.contains("[ui.sidebar.spaces]"));
+        assert!(merged.contains("\"$rgit\""));
+        assert_eq!(append_sidebar_git(&merged).unwrap(), merged);
+    }
+
+    #[test]
+    fn preserves_an_existing_workspace_sidebar() {
+        let err = append_sidebar_git("[ui.sidebar.spaces]\nrows = [[\"workspace\"]]\n").unwrap_err();
+        assert_eq!(err.to_string(), "[ui.sidebar.spaces] already exists; add $rgit to its rows manually");
+    }
 }
 
 /// `unbind <plugin>.<action> | <key>`: remove the marked block matching the

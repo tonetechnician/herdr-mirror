@@ -103,6 +103,9 @@ pub struct HostConfig {
     pub session: Option<String>,
     /// ssh hosts only; see `ApiTransport`. Default `Auto`.
     pub api_transport: ApiTransport,
+    /// Forward remote checkout Git metadata to mirror workspace and agent rows.
+    /// Defaults on; disable it to keep mirror metadata byte-for-byte legacy.
+    pub git_branch: bool,
     /// keep each mirror pane in control (writable, no idle release, and sized to
     /// the local pane so it fills). Default on; ideal for headless remotes. Turn
     /// off per host for a remote a human is actively using directly.
@@ -160,6 +163,7 @@ struct RawConfig {
     always_control: Option<bool>,
     max_cols: Option<usize>,
     max_rows: Option<usize>,
+    git_branch: Option<bool>,
     // toml::Table (preserve_order) keeps declaration order — the first host
     // is the remote-create fallback, so order is user-visible
     #[serde(default)]
@@ -182,6 +186,7 @@ struct RawHost {
     max_cols: Option<usize>,
     max_rows: Option<usize>,
     api_transport: Option<String>,
+    git_branch: Option<bool>,
 }
 
 /// Resolve `kind` + its ref fields, rejecting combinations that would silently
@@ -261,6 +266,7 @@ pub fn load_config(candidates: &[PathBuf]) -> Result<MirrorConfig> {
 pub fn parse_config(text: &str) -> Result<MirrorConfig> {
     let raw: RawConfig = toml::from_str(text)?;
     let global_always_control = raw.always_control.unwrap_or(true);
+    let global_git_branch = raw.git_branch.unwrap_or(true);
     // 0 is treated as unset rather than "clamp to nothing", same as an empty
     // remote_bin: a cap that would starve the remote of every column is a typo,
     // not an instruction. Warn rather than dropping it silently — and say that
@@ -322,6 +328,7 @@ pub fn parse_config(text: &str) -> Result<MirrorConfig> {
             max_rows: size_cap(h.max_rows).or(global_max_rows),
             docker_bin: h.docker_bin.unwrap_or_else(|| "docker".into()),
             api_transport,
+            git_branch: h.git_branch.unwrap_or(global_git_branch),
             kind,
             target,
             name,
@@ -373,6 +380,7 @@ mod tests {
         assert_eq!(h.remote_bin, None); // auto: PATH then ~/.local/bin/herdr
         assert_eq!(h.session, None); // default remote session
         assert!(h.always_control); // default on
+        assert!(h.git_branch); // default on
     }
 
     #[test]
@@ -410,6 +418,16 @@ mod tests {
         assert_eq!(a.max_rows, None); // rows were never capped
         assert_eq!(b.max_cols, Some(120)); // per-host override
         assert_eq!(b.max_rows, Some(40));
+    }
+
+    #[test]
+    fn git_branch_inherits_and_overrides() {
+        let c = parse_config(
+            "git_branch = false\n[hosts.a]\ntarget = \"a\"\n[hosts.b]\ntarget = \"b\"\ngit_branch = true\n",
+        )
+        .unwrap();
+        assert!(!c.hosts[0].git_branch);
+        assert!(c.hosts[1].git_branch);
     }
 
     /// A cap of 0 would starve the remote of every column. Treat it as unset,

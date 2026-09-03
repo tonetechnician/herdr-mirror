@@ -613,6 +613,7 @@ mod tests {
             max_cols: None,
             max_rows: None,
             api_transport: ApiTransport::Auto,
+            git_branch: true,
             always_control: true,
         }
     }

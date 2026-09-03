@@ -27,10 +27,17 @@ pub struct WsInfo {
     pub tab_count: Option<u64>,
     pub pane_count: Option<u64>,
     pub active_tab_id: Option<String>,
+    #[serde(default)]
+    pub worktree: Option<WorktreeInfo>,
     /// custom metadata tokens the remote publishes. `default` on purpose: a
     /// pre-0.7.4 remote never sends this.
     #[serde(default)]
     pub tokens: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct WorktreeInfo {
+    pub checkout_path: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -342,7 +349,7 @@ pub async fn apply_hidden(
 
 /// Mark a local id the plugin itself is about to close, so the close event it
 /// raises isn't read back as the user closing the mirror (see closes.rs).
-fn mark_self_close(deps: &ConvergeDeps, local_id: &str) {
+fn mark_self_close(deps: &ConvergeDeps<'_>, local_id: &str) {
     if let Ok(mut t) = deps.closes.lock() {
         t.mark_self_close(local_id);
     }
@@ -421,9 +428,10 @@ fn resolve_label(
     }
 }
 
-pub struct ConvergeDeps {
+pub struct ConvergeDeps<'a> {
     pub local: ApiClient,
     pub remote: ApiClient,
+    pub remote_host: &'a crate::remote::RemoteHost,
     pub host: HostConfig,
     pub state_dir: PathBuf,
     pub log: Logger,
@@ -527,7 +535,7 @@ fn sh_quote(s: &str) -> String {
 /// one anyone looks at), so the local side wins there; a watch-only host has its
 /// own display and its layout is authoritative.
 async fn reconcile_tab_geometry(
-    deps: &ConvergeDeps,
+    deps: &ConvergeDeps<'_>,
     state: &mut HostState,
     remote_tab: &str,
     local_tab: &str,
@@ -757,6 +765,62 @@ fn mirror_pane_cwd(state_dir: &std::path::Path) -> std::path::PathBuf {
     state_dir.join(MIRROR_CWD_MARKER)
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct GitStatus {
+    branch: String,
+    ahead: String,
+    behind: String,
+}
+
+fn parse_git_status(output: &str) -> Option<GitStatus> {
+    let mut lines = output.lines();
+    let branch = lines.next()?.trim();
+    if branch.is_empty() {
+        return None;
+    }
+    let (ahead, behind) = lines
+        .next()
+        .and_then(|line| {
+            let mut counts = line.split_whitespace();
+            Some((counts.next()?.to_string(), counts.next()?.to_string()))
+        })
+        .unwrap_or_else(|| ("0".into(), "0".into()));
+    Some(GitStatus { branch: branch.to_string(), ahead, behind })
+}
+
+fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\\"'\\\"'"))
+}
+
+async fn remote_git_status(remote: &crate::remote::RemoteHost, checkout_path: &str) -> Option<GitStatus> {
+    let path = shell_quote(checkout_path);
+    let command = format!(
+        "git -C {path} symbolic-ref --quiet --short HEAD 2>/dev/null || git -C {path} rev-parse --short HEAD 2>/dev/null; git -C {path} rev-list --left-right --count 'HEAD...@{{upstream}}' 2>/dev/null || true"
+    );
+    remote.exec(&command, 15_000).await.ok().and_then(|output| parse_git_status(&output))
+}
+
+fn formatted_git_status(git: &GitStatus) -> String {
+    let detail = [("↑", &git.ahead), ("↓", &git.behind)]
+        .into_iter()
+        .filter(|(_, count)| count.as_str() != "0")
+        .map(|(arrow, count)| format!("{arrow}{count}"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    [git.branch.as_str(), detail.as_str()]
+        .into_iter()
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn add_git_tokens(tokens: &mut HashMap<String, String>, git: &GitStatus) {
+    tokens.insert("rbranch".into(), git.branch.clone());
+    tokens.insert("rahead".into(), git.ahead.clone());
+    tokens.insert("rbehind".into(), git.behind.clone());
+    tokens.insert("rgit".into(), formatted_git_status(git));
+}
+
 /// Is this remote pane another herdr-mirror's streamer pane? Read from the
 /// snapshot cwd marker — free, and race-free.
 fn pane_is_mirror(p: &PaneInfo) -> bool {
@@ -779,7 +843,7 @@ fn pane_is_mirror(p: &PaneInfo) -> bool {
 /// away instead of at pass end, so the intercept hook's map read (250ms after
 /// pane.created) sees the daemon-built object as mapped instead of judging it
 /// native junk and closing it.
-fn note_mapped(deps: &ConvergeDeps, state: &HostState, fresh_local_ids: &[String]) {
+fn note_mapped(deps: &ConvergeDeps<'_>, state: &HostState, fresh_local_ids: &[String]) {
     if let Ok(mut t) = deps.closes.lock() {
         for id in fresh_local_ids {
             t.forget(id);
@@ -794,7 +858,7 @@ fn note_mapped(deps: &ConvergeDeps, state: &HostState, fresh_local_ids: &[String
 }
 
 /// Returns the post-converge state so callers don't re-read the state file.
-pub async fn converge(deps: &ConvergeDeps) -> Result<HostState> {
+pub async fn converge(deps: &ConvergeDeps<'_>) -> Result<HostState> {
     let mut state = load_state(&deps.state_dir, &deps.host.name);
     let result = converge_inner(deps, &mut state).await;
     // save even on error: a crash mid-pass must not orphan created mirrors
@@ -802,7 +866,7 @@ pub async fn converge(deps: &ConvergeDeps) -> Result<HostState> {
     result.map(|()| state)
 }
 
-async fn converge_inner(deps: &ConvergeDeps, state: &mut HostState) -> Result<()> {
+async fn converge_inner(deps: &ConvergeDeps<'_>, state: &mut HostState) -> Result<()> {
     let host = &deps.host;
     let log = &deps.log;
     // Hidden hosts freeze here and go no further. Deliberately BEFORE the
@@ -839,6 +903,18 @@ async fn converge_inner(deps: &ConvergeDeps, state: &mut HostState) -> Result<()
     }
     let cmd_for = cmd_for_pane(&deps.host, &deps.state_dir, &sizes);
     let _ = std::fs::create_dir_all(mirror_pane_cwd(&deps.state_dir));
+    let mut git_statuses: HashMap<String, GitStatus> = HashMap::new();
+    if host.git_branch {
+        for workspace in &remote_snap.workspaces {
+            let Some(worktree) = &workspace.worktree else { continue };
+            match remote_git_status(deps.remote_host, &worktree.checkout_path).await {
+                Some(git) => {
+                    git_statuses.insert(workspace.workspace_id.clone(), git);
+                }
+                None => log.log(&format!("[{}] no git branch for remote workspace {}", host.name, workspace.workspace_id)),
+            }
+        }
+    }
 
     // 1. detect mirrors that are gone locally. Always tombstone (never remove)
     //    so this pass can't recreate them (the snapshot still lists the object);
@@ -1075,9 +1151,8 @@ async fn converge_inner(deps: &ConvergeDeps, state: &mut HostState) -> Result<()
                 struct CreatedTab {
                     tab_id: String,
                 }
-                // same non-git marker cwd the mirror panes use, so the
-                // workspace's default pane never flashes a (misleading) sidebar
-                // git branch before layout.apply swaps in the real mirror panes
+                // Keep the marker cwd: branch metadata is forwarded below, while
+                // native chip synthesis requires a separate herdr capability scan.
                 let cwd = mirror_pane_cwd(&deps.state_dir).display().to_string();
                 let created: Created = deps
                     .local
@@ -1104,8 +1179,12 @@ async fn converge_inner(deps: &ConvergeDeps, state: &mut HostState) -> Result<()
     //     configured locally. Ignored by a pre-0.7.4 local server.
     let source = mirror_source(&host.name);
     for rws in &remote_snap.workspaces {
-        if rws.tokens.is_empty() {
-            continue; // nothing to forward (also the pre-0.7.4 remote case)
+        let mut tokens = rws.tokens.clone();
+        if let Some(git) = git_statuses.get(&rws.workspace_id) {
+            add_git_tokens(&mut tokens, git);
+        }
+        if tokens.is_empty() {
+            continue;
         }
         let Some(entry) = state.workspaces.get(&rws.workspace_id) else { continue };
         if entry.is_tombstoned() || !local_ws_ids.contains(&entry.local_id) {
@@ -1115,7 +1194,7 @@ async fn converge_inner(deps: &ConvergeDeps, state: &mut HostState) -> Result<()
             .local
             .request(
                 "workspace.report_metadata",
-                json!({ "workspace_id": entry.local_id, "source": source, "tokens": rws.tokens }),
+                json!({ "workspace_id": entry.local_id, "source": source, "tokens": tokens }),
             )
             .await;
     }
@@ -1403,7 +1482,7 @@ async fn converge_inner(deps: &ConvergeDeps, state: &mut HostState) -> Result<()
     state.ratios.retain(|k, _| k.split('|').next().is_some_and(|t| live_tabs.contains(t)));
 
     // 5. push authoritative agent status onto mirror panes
-    push_statuses(deps, &remote_snap, state).await;
+    push_statuses(deps, &remote_snap, state, &git_statuses).await;
     Ok(())
 }
 
@@ -1416,6 +1495,7 @@ pub async fn push_pane_status(
     remote_id: &str,
     entry: &mut PaneEntry,
     agent: Option<&AgentInfo>,
+    git: Option<&GitStatus>,
     log: &Logger,
 ) {
     if entry.is_tombstoned() {
@@ -1457,13 +1537,17 @@ pub async fn push_pane_status(
             // forward the remote's own tokens so a mirrored agent row carries the
             // same values a native one does, under whatever layout is configured
             // locally. Ignored by a pre-0.7.4 local server (no deny_unknown_fields).
+            let mut tokens = agent.tokens.clone();
+            if let Some(git) = git {
+                add_git_tokens(&mut tokens, git);
+            }
             let mut meta = json!({
                 "pane_id": entry.local_id,
                 "source": source,
                 "display_agent": display,
                 "title": agent.effective_title(),
                 "state_labels": agent.state_labels.clone().unwrap_or_default(),
-                "tokens": agent.tokens.clone(),
+                "tokens": tokens,
                 "seq": entry.seq,
             });
             if custom.is_none() {
@@ -1548,12 +1632,25 @@ pub async fn apply_remote_closes(
     }
 }
 
-pub async fn push_statuses(deps: &ConvergeDeps, remote_snap: &Snapshot, state: &mut HostState) {
+pub async fn push_statuses(
+    deps: &ConvergeDeps<'_>,
+    remote_snap: &Snapshot,
+    state: &mut HostState,
+    git_statuses: &HashMap<String, GitStatus>,
+) {
     let agent_by_pane: HashMap<&str, &AgentInfo> =
         remote_snap.agents.iter().map(|a| (a.pane_id.as_str(), a)).collect();
+    let workspace_by_pane: HashMap<&str, &str> = remote_snap
+        .panes
+        .iter()
+        .map(|pane| (pane.pane_id.as_str(), pane.workspace_id.as_str()))
+        .collect();
     for (remote_id, entry) in state.panes.iter_mut() {
         let agent = agent_by_pane.get(remote_id.as_str()).copied();
-        push_pane_status(&deps.local, &deps.host.name, remote_id, entry, agent, &deps.log).await;
+        let git = workspace_by_pane
+            .get(remote_id.as_str())
+            .and_then(|workspace_id| git_statuses.get(*workspace_id));
+        push_pane_status(&deps.local, &deps.host.name, remote_id, entry, agent, git, &deps.log).await;
     }
 }
 
@@ -1707,6 +1804,34 @@ pub async fn regroup_sidebar(local: &ApiClient, prefixes: &[String], log: &Logge
 
 #[cfg(test)]
 mod tests {
+    use super::parse_git_status;
+
+    #[test]
+    fn parses_branch_detached_and_missing_upstream() {
+        let branch = parse_git_status("main\n2\t3\n").unwrap();
+        assert_eq!(branch.branch, "main");
+        assert_eq!((branch.ahead.as_str(), branch.behind.as_str()), ("2", "3"));
+
+        let detached = parse_git_status("a1b2c3d\n").unwrap();
+        assert_eq!(detached.branch, "a1b2c3d");
+        assert_eq!((detached.ahead.as_str(), detached.behind.as_str()), ("0", "0"));
+        assert!(parse_git_status("\n").is_none());
+    }
+
+    #[test]
+    fn git_tokens_replace_all_three_values() {
+        let git = parse_git_status("main\n4 5\n").unwrap();
+        let mut tokens = std::collections::HashMap::from([("rbranch".into(), "stale".into())]);
+        super::add_git_tokens(&mut tokens, &git);
+        assert_eq!(tokens.get("rbranch"), Some(&"main".into()));
+        assert_eq!(tokens.get("rahead"), Some(&"4".into()));
+        assert_eq!(tokens.get("rbehind"), Some(&"5".into()));
+        assert_eq!(tokens.get("rgit"), Some(&"main ↑4 ↓5".into()));
+
+        let no_status = parse_git_status("main\n0 0\n").unwrap();
+        assert_eq!(super::formatted_git_status(&no_status), "main");
+    }
+
     use super::hidden_close_plan;
 
     fn ws_entry(local: &str, tomb: bool) -> WsEntry {
@@ -1762,6 +1887,7 @@ mod tests {
             max_cols: None,
             max_rows: None,
             api_transport: crate::config::ApiTransport::Auto,
+            git_branch: true,
         }
     }
 
