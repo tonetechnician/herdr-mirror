@@ -2,7 +2,7 @@
 id: "20260903-new-worktree-works-on-mirrored-repos-like-herdr-local-3o7j"
 schema: task
 title: "New Worktree works on mirrored repos exactly like herdr local: intercept the native new_worktree flow (prefix+shift+g) so it creates the worktree on the mirrored host"
-status: open
+status: done
 section: herdr-mirror
 tier: medium
 blocked_by:
@@ -16,3 +16,4 @@ created: "2026-09-03"
 ## History
 
 - 2026-09-03 created
+- 2026-09-03T09:14:36.702Z landed task/20260903-new-worktree-works-on-mirrored-repos-like-herdr-local-3o7j on main as f64f8cb73d17362f2adbf8cdcc21c8399c8953af
