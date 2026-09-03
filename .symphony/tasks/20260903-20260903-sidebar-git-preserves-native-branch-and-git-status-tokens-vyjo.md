@@ -2,7 +2,7 @@
 id: "20260903-20260903-sidebar-git-preserves-native-branch-and-git-status-tokens-vyjo"
 schema: task
 title: "sidebar-git preserves herdr's native branch and git_status tokens: append $rgit to the last row rather than replacing the defaults"
-status: open
+status: done
 section: herdr-mirror
 tier: low
 blocked_by: []
@@ -15,3 +15,4 @@ created: "2026-09-03"
 ## History
 
 - 2026-09-03 created
+- 2026-09-03T08:58:38.199Z landed task/20260903-20260903-sidebar-git-preserves-native-branch-and-git-status-tokens-vyjo on main as fe308afb7911f7dc087341b779c63a41492bc392
